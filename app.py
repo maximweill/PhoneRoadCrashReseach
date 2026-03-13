@@ -2,50 +2,152 @@ from shiny.express import input, ui
 from shiny import reactive, render
 from shinywidgets import render_plotly
 import plotly.express as px
-from get_data import SAMPLE_CHOICES
+from get_data import (
+    CRASH_SAMPLE_CHOICES,
+    LOGS,
+    LOGS_CHOICES,
+    HEAD_DROP_SAMPLE_CHOICES,
+    PHONE_DROP_SAMPLE_CHOICES,
+    devices_data,
+    numeric_cols,
+    manufacturers
+)
 import pandas as pd
 import numpy as np
-from get_data import devices_data,numeric_cols,manufacturers
+import helper
 
 
-#Crash Data -------------------------------------
+
+# Phone Drops Tests
+@reactive.calc
+def drop_test_log():
+    # Only load the columns needed for the main line plots + time
+    name = input.test_name()
+    filter_name = LOGS[LOGS["Test Name"] == name]
+    return filter_name
 
 @reactive.calc
-def data():
+def headform_data():
+    log = drop_test_log()
+    headform_filenames = log[log["File Name"].str.contains("_FILTERED")]
+    head_path = HEAD_DROP_SAMPLE_CHOICES[headform_filenames[0]]
+    return {headform_filenames[0]:helper.load_head_data(head_path)}
+
+@reactive.calc
+def phone_data():
+    log = drop_test_log()
+    phone_filenames = [log[log["File Name"].str.contains("crash_data")]["File Name"].tolist()[0]]
+    
+    all_dfs = []
+    for filename in phone_filenames:
+        df = helper.load_phone_data(PHONE_DROP_SAMPLE_CHOICES[filename])
+        # Add a column to identify which file this data came from
+        df["source_file"] = filename 
+        all_dfs.append(df)
+    
+    # Combine all individual test dataframes into one
+    return pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
+
+with ui.nav_panel("Phone Drop Test Data"):
+    with ui.layout_columns():
+        with ui.card(title="Filters"):
+            ui.input_select("test_name", "Select Drop Test", choices=list(LOGS_CHOICES))
+            
+    with ui.card(title="Sensor Plots"):
+        @render_plotly
+        def multi_accel_plot():
+            df = phone_data()
+
+            # 1. Melt the DataFrame to move axis names into a single column
+            df_long = df.melt(
+                id_vars=["time_ns", "source_file"], 
+                value_vars=["accelX_g", "accelY_g", "accelZ_g"],
+                var_name="sensor_axis", 
+                value_name="g_force"
+            )
+
+            # 2. Map axis names to cleaner titles for the subplots
+            labels = {
+                "accelX_g": "Accel X",
+                "accelY_g": "Accel Y",
+                "accelZ_g": "Accel Z"
+            }
+            df_long["sensor_axis"] = df_long["sensor_axis"].map(labels)
+
+            # 3. Create the plot
+            fig = px.line(
+                df_long, 
+                x="time_ns", 
+                y="g_force", 
+                facet_row="sensor_axis", # Creates the 3 subplots (X, Y, Z)
+                color="source_file",     # Keeps all phones on the same subplot per axis
+                labels={"g_force": "Acceleration (g)", "time_ns": "Time (ns)", "source_file": "Phone ID"},
+                category_orders={"sensor_axis": ["Accel X", "Accel Y", "Accel Z"]} # Ensures correct order
+            )
+
+            # 4. Clean up subplot titles and axes
+            fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+            fig.update_yaxes(matches=None) # Allows each axis (X, Y, Z) to scale independently
+            
+            return fig
+
+        @render_plotly
+        def multi_gyro_plot():
+            df = phone_data()
+
+            df_long = df.melt(
+                id_vars=["time_ns", "source_file"], 
+                value_vars=["gyroX_dps", "gyroY_dps", "gyroZ_dps"],
+                var_name="sensor_axis", 
+                value_name="dps"
+            )
+
+            labels = {
+                "gyroX_dps": "Gyro X",
+                "gyroY_dps": "Gyro Y",
+                "gyroZ_dps": "Gyro Z"
+            }
+            df_long["sensor_axis"] = df_long["sensor_axis"].map(labels)
+
+            fig = px.line(
+                df_long, 
+                x="time_ns", 
+                y="dps", 
+                facet_row="sensor_axis",
+                color="source_file",
+                labels={"dps": "Degrees/s", "time_ns": "Time (ns)", "source_file": "Phone ID"},
+                category_orders={"sensor_axis": ["Gyro X", "Gyro Y", "Gyro Z"]}
+            )
+
+            fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+            fig.update_yaxes(matches=None)
+            
+            return fig
+        
+#Reactives JLR -------------------------------------
+@reactive.calc
+def crash_data():
     # Only load the columns needed for the main line plots + time
     name = input.file()
-    path = SAMPLE_CHOICES[name]
-    cols = ["time_s", "accelX_g", "accelY_g", "accelZ_g", 
-            "gyroX_dps", "gyroY_dps", "gyroZ_dps", "time_ns"]
-    return pd.read_parquet(path, columns=cols)
+    path = CRASH_SAMPLE_CHOICES[name]
+    return helper.load_phone_data(path=path)
 
 @reactive.calc
 def sampling_rate():
-    # We can pull just one column from the parquet for this calculation
-    path = SAMPLE_CHOICES[input.file()]
-    nano = pd.read_parquet(path, columns=["time_ns"])["time_ns"].to_numpy()
-    differences_fps = 1 / (np.diff(nano) * 1e-9)
-    return differences_fps
+    return helper.get_phone_sampling_rate(crash_data())
 
 @reactive.calc
 def accel_range():
-    # Vectorized max is faster than list comprehension
-    params = ["accelX_g", "accelY_g", "accelZ_g"]
-    df = data()[params]
-    return df.max().round(3).tolist()
+    return helper.get_peak_accel(crash_data())
 
 @reactive.calc
 def gyro_range():
-    params = ["gyroX_dps", "gyroY_dps", "gyroZ_dps"]
-    df = data()[params]
-    return df.max().round(3).tolist()
-
-# --- UI Definitions ---
+    return helper.get_peak_gyro(crash_data())
 
 with ui.nav_panel("Crash Data"):
     with ui.layout_columns():
         with ui.card(title="Filters"):
-            ui.input_select("file", "Select Crash Record", choices=list(SAMPLE_CHOICES))
+            ui.input_select("file", "Select Crash Record", choices=list(CRASH_SAMPLE_CHOICES))
             
         with ui.card(title="MetaData"):
             @render.text
@@ -67,18 +169,18 @@ with ui.nav_panel("Crash Data"):
     with ui.card(title="Sensor Plots"):
         @render_plotly
         def accel_plot():
-            df = data()
+            df = crash_data()
             fig = px.line(
-                df, x="time_s", y=["accelX_g", "accelY_g", "accelZ_g"],
+                df, x="time_ns", y=["accelX_g", "accelY_g", "accelZ_g"],
                 title="Accelerometer Data (g) vs Time (s)"
             )
             return fig
 
         @render_plotly
         def gyro_plot():
-            df = data()
+            df = crash_data()
             fig = px.line(
-                df, x="time_s", y=["gyroX_dps", "gyroY_dps", "gyroZ_dps"],
+                df, x="time_ns", y=["gyroX_dps", "gyroY_dps", "gyroZ_dps"],
                 title="Gyroscope Data (deg/s) vs Time (s)"
             )
             return fig

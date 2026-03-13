@@ -33,4 +33,7 @@ def convert_csv_to_parquet(source_dir="data", output_dir="data_parquet"):
         print(f" {csv_file.name} -> {pq_file.name} ({elapsed:.2f}s)")
 
 if __name__ == "__main__":
-    convert_csv_to_parquet(source_dir="data", output_dir="data_parquet")
+    #convert_csv_to_parquet(source_dir="car_crash_data_ignore", output_dir="car_crash_data_parquet")
+    #convert_csv_to_parquet(source_dir="phone_drop_test_data_ignore/headform", output_dir="phone_drop_test_data_parquet/headform_parquet")
+    #convert_csv_to_parquet(source_dir="phone_drop_test_data_ignore/phone", output_dir="phone_drop_test_data_parquet/phone_parquet")
+    convert_csv_to_parquet(source_dir="test_log_ignore", output_dir="test_log_parquet")
