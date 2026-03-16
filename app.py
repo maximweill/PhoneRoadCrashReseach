@@ -81,7 +81,7 @@ def drop_data():
 with ui.nav_panel("Phone Drop Test Data"):
     with ui.layout_columns():
         with ui.card(title="Filters"):
-            ui.input_select("test_name", "Select Drop Test", choices=list(LOGS_CHOICES))
+            ui.input_select("test_name", "Select Drop Test", choices=sorted(list(LOGS_CHOICES)))
         with ui.card(title = "df summary"):
             @render.data_frame
             def df_head():
