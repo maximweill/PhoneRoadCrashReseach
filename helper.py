@@ -3,16 +3,10 @@ import numpy as np
 
 def load_phone_data(path):
     df = pd.read_parquet(path)
-    df = df.rename(columns={
-        "sensor_time_ns":"time_ns",
-    })
     return df
 
 def load_head_data(path):
     df = pd.read_parquet(path)
-    df= df.rename(columns={
-        "sensor_time_ns":"time_ns",
-    })
     return df
 
 def get_phone_sampling_rate(df):

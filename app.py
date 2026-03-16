@@ -2,6 +2,9 @@ from shiny.express import input, ui
 from shiny import reactive, render
 from shinywidgets import render_plotly
 import plotly.express as px
+import pandas as pd
+import numpy as np
+import helper
 from get_data import (
     CRASH_SAMPLE_CHOICES,
     LOGS,
@@ -12,53 +15,86 @@ from get_data import (
     numeric_cols,
     manufacturers
 )
-import pandas as pd
-import numpy as np
-import helper
 
 
 
 # Phone Drops Tests
 @reactive.calc
 def drop_test_log():
-    # Only load the columns needed for the main line plots + time
     name = input.test_name()
+    # Force a KeyError if 'Test Name' doesn't exist or a filtered crash if empty
     filter_name = LOGS[LOGS["Test Name"] == name]
+    if filter_name.empty:
+        raise ValueError(f"CRASH: No data found for test name: '{name}'")
     return filter_name
 
 @reactive.calc
 def headform_data():
     log = drop_test_log()
-    headform_filenames = log[log["File Name"].str.contains("_FILTERED")]
-    head_path = HEAD_DROP_SAMPLE_CHOICES[headform_filenames[0]]
-    return {headform_filenames[0]:helper.load_head_data(head_path)}
+    
+    # 1. Get all filenames matching the filter
+    headform_filenames = log[log["File Name"].str.contains("FILTERED")]["File Name"].tolist()
+    
+    # 2. Add a check to prevent IndexError/Crashing (similar to phone_data)
+    if not headform_filenames:
+        raise FileNotFoundError("No '_FILTERED' files found in the log for this test.")
+
+    all_dfs = []
+    for filename in headform_filenames:
+        # 3. Lookup path and load
+        # Note: Ensure filename exists in HEAD_DROP_SAMPLE_CHOICES
+        path = HEAD_DROP_SAMPLE_CHOICES[filename]
+        df = helper.load_head_data(path)
+        
+        # 4. Add the source_file column to match phone_data structure
+        df["source_file"] = filename
+        all_dfs.append(df)
+    
+    # 5. Return a single concatenated DataFrame
+    return pd.concat(all_dfs, ignore_index=True)
+
 
 @reactive.calc
 def phone_data():
     log = drop_test_log()
-    phone_filenames = [log[log["File Name"].str.contains("crash_data")]["File Name"].tolist()[0]]
+    # Get filenames; if none contain 'crash_data', the loop won't run and concat will fail
+    phone_filenames = log[log["File Name"].str.contains("crash_data")]["File Name"].tolist()
     
+    if not phone_filenames:
+        raise FileNotFoundError("CRASH: No 'crash_data' files found in the log for this test.")
+
     all_dfs = []
     for filename in phone_filenames:
-        df = helper.load_phone_data(PHONE_DROP_SAMPLE_CHOICES[filename])
-        # Add a column to identify which file this data came from
+        # Strict lookup: will crash if filename is missing from CHOICES
+        path = PHONE_DROP_SAMPLE_CHOICES[filename]
+        df = helper.load_phone_data(path)
         df["source_file"] = filename 
         all_dfs.append(df)
     
-    # Combine all individual test dataframes into one
-    return pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
+    # pd.concat will crash if all_dfs is empty (handled above, but good to know)
+    return pd.concat(all_dfs, ignore_index=True)
+
+@reactive.calc
+def drop_data():
+    return pd.concat([phone_data(), headform_data()], ignore_index=True)
+
 
 with ui.nav_panel("Phone Drop Test Data"):
     with ui.layout_columns():
         with ui.card(title="Filters"):
             ui.input_select("test_name", "Select Drop Test", choices=list(LOGS_CHOICES))
+        with ui.card(title = "df summary"):
+            @render.data_frame
+            def df_head():
+                # Displaying the first 10 rows of the selected test
+                return render.DataTable(drop_test_log().head(10))
             
     with ui.card(title="Sensor Plots"):
         @render_plotly
         def multi_accel_plot():
-            df = phone_data()
+            df = drop_data()
 
-            # 1. Melt the DataFrame to move axis names into a single column
+            # Melt will crash if any of these columns are missing from the CSVs
             df_long = df.melt(
                 id_vars=["time_ns", "source_file"], 
                 value_vars=["accelX_g", "accelY_g", "accelZ_g"],
@@ -66,35 +102,23 @@ with ui.nav_panel("Phone Drop Test Data"):
                 value_name="g_force"
             )
 
-            # 2. Map axis names to cleaner titles for the subplots
-            labels = {
-                "accelX_g": "Accel X",
-                "accelY_g": "Accel Y",
-                "accelZ_g": "Accel Z"
-            }
+            labels = {"accelX_g": "Accel X", "accelY_g": "Accel Y", "accelZ_g": "Accel Z"}
             df_long["sensor_axis"] = df_long["sensor_axis"].map(labels)
 
-            # 3. Create the plot
-            fig = px.line(
+            # Plotly Express will crash if df_long has unexpected types
+            return px.line(
                 df_long, 
                 x="time_ns", 
                 y="g_force", 
-                facet_row="sensor_axis", # Creates the 3 subplots (X, Y, Z)
-                color="source_file",     # Keeps all phones on the same subplot per axis
-                labels={"g_force": "Acceleration (g)", "time_ns": "Time (ns)", "source_file": "Phone ID"},
-                category_orders={"sensor_axis": ["Accel X", "Accel Y", "Accel Z"]} # Ensures correct order
-            )
-
-            # 4. Clean up subplot titles and axes
-            fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
-            fig.update_yaxes(matches=None) # Allows each axis (X, Y, Z) to scale independently
-            
-            return fig
+                facet_row="sensor_axis",
+                color="source_file",
+                labels={"g_force": "Acceleration (g)", "time_ns": "Time (ns)"},
+                category_orders={"sensor_axis": ["Accel X", "Accel Y", "Accel Z"]}
+            ).update_yaxes(matches=None)
 
         @render_plotly
         def multi_gyro_plot():
-            df = phone_data()
-
+            df = drop_data()
             df_long = df.melt(
                 id_vars=["time_ns", "source_file"], 
                 value_vars=["gyroX_dps", "gyroY_dps", "gyroZ_dps"],
