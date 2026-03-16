@@ -11,9 +11,8 @@ from get_data import (
     LOGS_CHOICES,
     HEAD_DROP_SAMPLE_CHOICES,
     PHONE_DROP_SAMPLE_CHOICES,
-    devices_data,
-    numeric_cols,
-    manufacturers
+    DEVICE_DATA_DIR_DATA,
+    META_DATA_DIR
 )
 
 
@@ -212,19 +211,48 @@ with ui.nav_panel("Crash Data"):
 #Sensor Abilities ------------------------------------ 
 
 @reactive.calc
+def devices_data():
+    return pd.read_parquet(DEVICE_DATA_DIR_DATA, engine="pyarrow")
+ 
+@reactive.calc
+def meta_df():
+    return pd.read_parquet(META_DATA_DIR, engine="pyarrow")
+
+@reactive.calc
+def manufacturers():
+    cols = meta_df()["manufacturers"].iloc[0].tolist() 
+    return sorted(cols, key=lambda s: str(s).lower())
+
+@reactive.calc
+def numeric_cols():
+    cols = meta_df()["numeric_cols"].iloc[0].tolist()
+    return sorted(cols)
+
+
+@reactive.calc
 def filtered_data():
-    sub = devices_data[devices_data["manufacturer"] == input.manufacturer()]
+    sub = devices_data()[devices_data()["manufacturer"] == input.manufacturer()]
     model_text = input.model_text().strip()
     if model_text:
         sub = sub[sub["model"].str.contains(model_text, case=False, na=False)]
     return sub
 
+@reactive.effect
+def _():
+    # Update manufacturer choices
+    m_choices = manufacturers()
+    ui.update_select("manufacturer", choices=m_choices, selected="Apple")
+    
+    # Update variable choices
+    v_choices = numeric_cols()
+    ui.update_select("variable", choices=v_choices, selected="accelerometer_rate")
+
 with ui.nav_panel("Sensor Abilities"):
     with ui.layout_columns():
         with ui.card(title="Filters", full_screen=False):
-            ui.input_select("manufacturer", "Manufacturer", choices=manufacturers, selected="Apple")
+            ui.input_select("manufacturer", "Manufacturer", choices=[], selected=None)
             ui.input_text("model_text", "Text contained in Model Name", value="")
-            ui.input_select("variable", "Variable", choices=numeric_cols, selected="accelerometer_rate")
+            ui.input_select("variable", "Variable", choices=[], selected=None)
         with ui.card(title="Distribution", full_screen=False):
             @render_plotly
             def boxplot2():

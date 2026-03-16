@@ -25,15 +25,8 @@ LOGS_CHOICES = LOGS["Test Name"]
 
 HERE = Path(__file__).resolve().parent
 DATA_DIR = HERE / "phyphox_data" / "fast_data"
-devices_data = pd.read_parquet(DATA_DIR / "devices.parquet", engine="pyarrow")
-meta_df = pd.read_parquet(DATA_DIR / "metadata.parquet", engine="pyarrow")
-
-manufacturers = meta_df["manufacturers"].iloc[0].tolist()
-numeric_cols = meta_df["numeric_cols"].iloc[0].tolist()
-
-manufacturers = sorted(manufacturers, key=lambda s: str(s).lower())
-numeric_cols = sorted(numeric_cols)
-
+DEVICE_DATA_DIR_DATA = DATA_DIR / "devices.parquet"
+META_DATA_DIR = DATA_DIR / "metadata.parquet"
 
 # print -------------------
 print("Loaded data")
