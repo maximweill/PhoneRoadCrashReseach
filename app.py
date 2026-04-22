@@ -96,31 +96,39 @@ with ui.nav_panel("Phone Drop Test Data"):
             # Melt will crash if any of these columns are missing from the CSVs
             df_long = df.melt(
                 id_vars=["time_ns", "source_file"], 
-                value_vars=["accelX_g", "accelY_g", "accelZ_g"],
+                value_vars=["accelX_g", "accelY_g", "accelZ_g","accelMag_g"],
                 var_name="sensor_axis", 
                 value_name="g_force"
             )
 
-            labels = {"accelX_g": "Accel X", "accelY_g": "Accel Y", "accelZ_g": "Accel Z"}
+            labels = {
+                "accelX_g": "Accel X",
+                "accelY_g": "Accel Y",
+                "accelZ_g": "Accel Z",
+                "accelMag_g":"Accel Mag"
+            }
             df_long["sensor_axis"] = df_long["sensor_axis"].map(labels)
 
             # Plotly Express will crash if df_long has unexpected types
-            return px.line(
+            fig = px.line(
                 df_long, 
                 x="time_ns", 
                 y="g_force", 
                 facet_row="sensor_axis",
                 color="source_file",
-                labels={"g_force": "Acceleration (g)", "time_ns": "Time (ns)"},
-                category_orders={"sensor_axis": ["Accel X", "Accel Y", "Accel Z"]}
-            ).update_yaxes(matches=None)
+                labels={"g_force": "Accel (g)", "time_ns": "Time (ns)"},
+                category_orders={"sensor_axis": ["Accel X", "Accel Y", "Accel Z","Accel Mag"]}
+            )
+            fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+            fig.update_yaxes(matches=None)
+            return fig
 
         @render_plotly
         def multi_gyro_plot():
             df = drop_data()
             df_long = df.melt(
                 id_vars=["time_ns", "source_file"], 
-                value_vars=["gyroX_dps", "gyroY_dps", "gyroZ_dps"],
+                value_vars=["gyroX_dps", "gyroY_dps", "gyroZ_dps","gyroMag_dps"],
                 var_name="sensor_axis", 
                 value_name="dps"
             )
@@ -128,7 +136,8 @@ with ui.nav_panel("Phone Drop Test Data"):
             labels = {
                 "gyroX_dps": "Gyro X",
                 "gyroY_dps": "Gyro Y",
-                "gyroZ_dps": "Gyro Z"
+                "gyroZ_dps": "Gyro Z",
+                "gyroMag_dps": "Gyro Mag"
             }
             df_long["sensor_axis"] = df_long["sensor_axis"].map(labels)
 
@@ -139,13 +148,14 @@ with ui.nav_panel("Phone Drop Test Data"):
                 facet_row="sensor_axis",
                 color="source_file",
                 labels={"dps": "Degrees/s", "time_ns": "Time (ns)", "source_file": "Phone ID"},
-                category_orders={"sensor_axis": ["Gyro X", "Gyro Y", "Gyro Z"]}
+                category_orders={"sensor_axis": ["Gyro X", "Gyro Y", "Gyro Z","Gyro Mag"]}
             )
 
             fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
             fig.update_yaxes(matches=None)
             
             return fig
+
         
 #Reactives JLR -------------------------------------
 @reactive.calc
