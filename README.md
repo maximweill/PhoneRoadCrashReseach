@@ -30,7 +30,7 @@ A specialized research tool for analyzing road crash data and phone drop tests. 
 
 1. **Clone the repository:**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/maximweill/PhoneRoadCrashReseach.git
    cd PhoneRoadCrashReseach
    ```
 
@@ -73,7 +73,7 @@ The script will automatically detect the data type, apply coordinate system tran
 ## Credits
 
 - **Developer**: Maxim Weill
-- **Data Source**: Claire Baker (Car and sled crash data)
+- **Data Source**: Claire Baker (Car and sled crash data), Maxim Weill and Claire Baker (Drop Test)
 - **Sensor Database**: [phyphox](https://phyphox.org/sensordb)
 
 ---
