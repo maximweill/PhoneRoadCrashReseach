@@ -43,8 +43,41 @@ def frame_data(df, t0=5e7, tf=50e7, trigger=7.9):
         # 4. Slice and return
         return df
 
+def convert_csv_to_parquet(csv_file="data.csv", pq_file="data_parquet",downsample = 1, framer_df = None):
+    if framer_df is not None:
+        # Find the row for this file
+        params = framer_df[framer_df["phone_file"] == csv_file.name]
+        
+        if params.empty:
+            print(f"  Skipping {csv_file.name}: No framing parameters found")
+            return
+            
+        lag_idx = max(0, int(params.iloc[0]["lag_indices"]))
+        ref_length = int(params.iloc[0]["ref_length"])
+        lag_time = int(params.iloc[0]["lag_ns"])
+        
+        df = pd.read_csv(csv_file)
+        
+        df["time_ns"] += lag_time
+        # Slice the data
+        df = df.iloc[lag_idx : lag_idx + ref_length].copy()
 
-def convert_csv_to_parquet(source_dir="data", output_dir="data_parquet",downsample = 1):
+        df_downsampled = df.iloc[::downsample, :]
+        df_downsampled.to_parquet(pq_file, engine='pyarrow', index=False, compression='snappy')
+    else:
+        df = pd.read_csv(csv_file)
+        if "sensor_time_ns" in df.columns:
+            df = df.rename(columns={
+                "sensor_time_ns":"time_ns",
+            })
+            df = frame_data(df)
+            df_downsampled = df.iloc[::downsample, :]
+            df_downsampled.to_parquet(pq_file, engine='pyarrow', index=False, compression='snappy')
+        else:
+            df.to_parquet(pq_file, engine='pyarrow', index=False, compression='snappy')
+
+
+def convert_csv_dir_to_parquet(source_dir="data", output_dir="data_parquet",downsample = 1, framer_path = None):
     # Create Path objects
     src_path = Path(source_dir)
     dest_path = Path(output_dir)
@@ -60,74 +93,23 @@ def convert_csv_to_parquet(source_dir="data", output_dir="data_parquet",downsamp
 
     print(f" Converting {len(csv_files)} files to {output_dir}...")
     
-    for csv_file in csv_files:
-        start_time = time.time()
-        
-        # Define the output path: output_dir/filename.parquet
-        pq_file = dest_path / csv_file.with_suffix(".parquet").name
-        
-        # Read and Write
-        # Using engine='pyarrow' for maximum speed
-        if "crash_data" in csv_file.name:
-            df = pd.read_csv(csv_file)
-            df = df.rename(columns={
-                "sensor_time_ns":"time_ns",
-            })
-            df = frame_data(df)
-            df_downsampled = df.iloc[::downsample, :]
-            df_downsampled.to_parquet(pq_file, engine='pyarrow', index=False, compression='snappy')
-        elif "FILTERED" in csv_file.name:
-            df = pd.read_csv(csv_file, skiprows=22)
-            df.columns = df.columns.str.strip()
-            df['Time'] = (df['Time'] * 1e9).astype(int)
-
-            #iso naming
-            rename_map = {
-                'Chan 0:6DX0855-AV1': 'gyroZ_dps',
-                'Chan 1:6DX0855-AV2': 'gyroY_dps',
-                'Chan 2:6DX0855-AV3': 'gyroX_dps',
-                'Chan 3:6DX0855-AC1': 'accelZ_g',
-                'Chan 4:6DX0855-AC2': 'accelY_g',
-                'Chan 5:6DX0855-AC3': 'accelX_g',
-                'Time': 'time_ns'
-            }
-            df = df.rename(columns=rename_map)
-            ##match with phones
-            rename_map = {
-                'gyroZ_dps': 'gyroZ_dps',
-                'gyroX_dps': 'gyroY_dps',
-                'gyroY_dps': 'gyroX_dps',
-                'accelZ_g': 'accelZ_g',
-                'accelX_g': 'accelY_g',
-                'accelY_g': 'accelX_g',
-            }
-            df = df.rename(columns=rename_map)
-            
-            df['gyroZ_dps'] *= 1 #??
-            df['accelZ_g'] *= 1 #??
-            df['gyroX_dps'] *= -1
-            df['accelX_g'] *= -1
-            df['gyroY_dps'] *= -1
-            df['accelY_g'] *= -1
-
-            df['accelMag_g'] = np.sqrt(df['accelX_g']**2 + df['accelY_g']**2 + df['accelZ_g']**2)
-            df['gyroMag_dps'] = np.sqrt(df['gyroX_dps']**2 + df['gyroY_dps']**2 + df['gyroZ_dps']**2)
-
-            df = frame_data(df)
-            df_downsampled = df.iloc[::downsample, :]
-            df_downsampled.to_parquet(pq_file, engine='pyarrow', index=False, compression='snappy')
-            
-
+    framer_df = None
+    if framer_path:
+        framer_path = Path(framer_path)
+        if framer_path.exists():
+            framer_df = pd.read_csv(framer_path)
         else:
-            df = pd.read_csv(csv_file)
-            df.to_parquet(pq_file, engine='pyarrow', index=False, compression='snappy')
+            print(f"Warning: framer_path '{framer_path}' not found.")
 
-        
-        elapsed = time.time() - start_time
-        print(f" {csv_file.name} -> {pq_file.name} ({elapsed:.2f}s)")
+    for csv_file in csv_files:
+        pq_file = dest_path / csv_file.with_suffix(".parquet").name
+        convert_csv_to_parquet(csv_file=csv_file, pq_file=pq_file,downsample = downsample, framer_df = framer_df)
+
+
 
 if __name__ == "__main__":
-    #convert_csv_to_parquet(source_dir="car_crash_data_ignore", output_dir="car_crash_data_parquet")
-    #convert_csv_to_parquet(source_dir="phone_drop_test_data_ignore/headform", output_dir="phone_drop_test_data_parquet/headform_parquet", downsample=5)
-    convert_csv_to_parquet(source_dir="phone_drop_test_data_ignore/phone", output_dir="phone_drop_test_data_parquet/phone_parquet")
-    #convert_csv_to_parquet(source_dir="test_log_ignore", output_dir="test_log_parquet")
+    convert_csv_dir_to_parquet(source_dir="car_crash_data_ignore", output_dir="car_crash_data_parquet")
+    convert_csv_dir_to_parquet(source_dir="test_log_ignore", output_dir="test_log_parquet")
+    convert_csv_dir_to_parquet(source_dir="phone_drop_test_data_ignore/phone_reference_signals", output_dir="phone_drop_test_data_parquet/phone_reference_signals")
+    convert_csv_dir_to_parquet(source_dir="phone_drop_test_data_ignore/phone_cleaned", output_dir="phone_drop_test_data_parquet/phone_cleaned", framer_path="test_log_ignore/phone_cropping_params.csv")
+    

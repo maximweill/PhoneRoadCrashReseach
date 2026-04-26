@@ -9,158 +9,150 @@ from get_data import (
     CRASH_SAMPLE_CHOICES,
     LOGS,
     LOGS_CHOICES,
-    HEAD_DROP_SAMPLE_CHOICES,
+    DEDUPLICATION_LOG,
+    CROPPING_PARAMS,
     PHONE_DROP_SAMPLE_CHOICES,
+    PHONE_REF_SAMPLE_CHOICES,
     DEVICE_DATA_DIR_DATA,
     META_DATA_DIR
 )
 
-
-
-# Phone Drops Tests
+# Phone Drop Tests --------------------------------------------------------
 @reactive.calc
 def drop_test_log():
     name = input.test_name()
-    # Force a KeyError if 'Test Name' doesn't exist or a filtered crash if empty
     filter_name = LOGS[LOGS["Test Name"] == name]
-    if filter_name.empty:
-        raise ValueError(f"CRASH: No data found for test name: '{name}'")
     return filter_name
 
 @reactive.calc
-def headform_data():
+def drop_test_combined_data():
     log = drop_test_log()
+    if log.empty:
+        return pd.DataFrame()
     
-    # 1. Get all filenames matching the filter
-    headform_filenames = log[log["File Name"].str.contains("FILTERED")]["File Name"].tolist()
+    phone_filenames = log[log["File Name"].str.contains("crash_data", na=False)]["File Name"].tolist()
     
-    # 2. Add a check to prevent IndexError/Crashing (similar to phone_data)
-    if not headform_filenames:
-        raise FileNotFoundError("No '_FILTERED' files found in the log for this test.")
-
-    all_dfs = []
-    for filename in headform_filenames:
-        # 3. Lookup path and load
-        # Note: Ensure filename exists in HEAD_DROP_SAMPLE_CHOICES
-        path = HEAD_DROP_SAMPLE_CHOICES[filename]
-        df = helper.load_head_data(path)
-        
-        # 4. Add the source_file column to match phone_data structure
-        df["source_file"] = filename
-        all_dfs.append(df)
-    
-    # 5. Return a single concatenated DataFrame
-    return pd.concat(all_dfs, ignore_index=True)
-
-
-@reactive.calc
-def phone_data():
-    log = drop_test_log()
-    # Get filenames; if none contain 'crash_data', the loop won't run and concat will fail
-    phone_filenames = log[log["File Name"].str.contains("crash_data")]["File Name"].tolist()
-    
-    if not phone_filenames:
-        raise FileNotFoundError("CRASH: No 'crash_data' files found in the log for this test.")
-
     all_dfs = []
     for filename in phone_filenames:
-        # Strict lookup: will crash if filename is missing from CHOICES
-        path = PHONE_DROP_SAMPLE_CHOICES[filename]
-        df = helper.load_phone_data(path)
-        df["source_file"] = filename 
-        all_dfs.append(df)
-    
-    # pd.concat will crash if all_dfs is empty (handled above, but good to know)
+        # Ensure filename has .csv for matching if it doesn't already
+        lookup_name = filename if filename.endswith(".csv") else f"{filename}.csv"
+        stem = filename.replace(".csv", "")
+        
+        if stem in PHONE_DROP_SAMPLE_CHOICES:
+            phone_id = stem.split("_")[-1]
+            
+            # Load Phone Data
+            df_p = helper.load_phone_data(PHONE_DROP_SAMPLE_CHOICES[stem])
+            df_p["source"] = "Phone"
+            df_p["phone_id"] = phone_id
+            df_p["file_stem"] = stem
+            all_dfs.append(df_p)
+            
+            # Try to load Reference Data using lookup_name
+            match = CROPPING_PARAMS[CROPPING_PARAMS["phone_file"] == lookup_name]
+            if not match.empty:
+                ref_filename = match.iloc[0]["ref_file"]
+                # Clean up ref_stem to match PHONE_REF_SAMPLE_CHOICES keys
+                ref_stem = ref_filename.replace(".csv", "").replace(".parquet", "")
+                
+                if ref_stem in PHONE_REF_SAMPLE_CHOICES:
+                    df_r = helper.load_reference_data(PHONE_REF_SAMPLE_CHOICES[ref_stem])
+                    df_r["source"] = "Reference"
+                    df_r["phone_id"] = phone_id
+                    df_r["file_stem"] = stem
+                    all_dfs.append(df_r)
+                    
+    if not all_dfs:
+        return pd.DataFrame()
+        
     return pd.concat(all_dfs, ignore_index=True)
 
 @reactive.calc
-def drop_data():
-    return pd.concat([phone_data(), headform_data()], ignore_index=True)
-
+def drop_test_metadata_summary():
+    log = drop_test_log()
+    if log.empty:
+        return pd.DataFrame()
+    
+    phone_filenames = log[log["File Name"].str.contains("crash_data", na=False)]["File Name"].tolist()
+    summary = []
+    
+    for filename in phone_filenames:
+        row = {"File": filename}
+        
+        # Add dedup info
+        dedup_match = DEDUPLICATION_LOG[DEDUPLICATION_LOG["file"] == filename]
+        if not dedup_match.empty:
+            row["Removed"] = dedup_match.iloc[0]["removed"]
+            row["% Removed"] = f"{dedup_match.iloc[0]['percent_removed']*100:.1f}%"
+            
+        # Add cropping info
+        crop_match = CROPPING_PARAMS[CROPPING_PARAMS["phone_file"] == filename]
+        if not crop_match.empty:
+            row["Lag Index"] = crop_match.iloc[0]["lag_indices"]
+            row["Ref Signal"] = crop_match.iloc[0]["ref_file"]
+            
+        summary.append(row)
+        
+    return pd.DataFrame(summary)
 
 with ui.nav_panel("Phone Drop Test Data"):
     with ui.layout_columns():
         with ui.card(title="Filters"):
             ui.input_select("test_name", "Select Drop Test", choices=sorted(list(LOGS_CHOICES)))
-        with ui.card(title = "df summary"):
+        with ui.card(title = "Processing Metadata"):
             @render.data_frame
-            def df_head():
-                # Displaying the first 10 rows of the selected test
-                return render.DataTable(drop_test_log().head(10))
+            def metadata_table():
+                return render.DataTable(drop_test_metadata_summary())
             
-    with ui.card(title="Sensor Plots"):
+    with ui.card(title="Accelerometer Magnitude Comparison"):
         @render_plotly
         def multi_accel_plot():
-            df = drop_data()
-
-            # Melt will crash if any of these columns are missing from the CSVs
-            df_long = df.melt(
-                id_vars=["time_ns", "source_file"], 
-                value_vars=["accelX_g", "accelY_g", "accelZ_g","accelMag_g"],
-                var_name="sensor_axis", 
-                value_name="g_force"
-            )
-
-            labels = {
-                "accelX_g": "Accel X",
-                "accelY_g": "Accel Y",
-                "accelZ_g": "Accel Z",
-                "accelMag_g":"Accel Mag"
-            }
-            df_long["sensor_axis"] = df_long["sensor_axis"].map(labels)
-
-            # Plotly Express will crash if df_long has unexpected types
+            df = drop_test_combined_data()
+            if df.empty:
+                return px.scatter(title="No data found for this test")
+            
+            # Using facet_row to separate phones
             fig = px.line(
-                df_long, 
+                df, 
                 x="time_ns", 
-                y="g_force", 
-                facet_row="sensor_axis",
-                color="source_file",
-                labels={"g_force": "Accel (g)", "time_ns": "Time (ns)"},
-                category_orders={"sensor_axis": ["Accel X", "Accel Y", "Accel Z","Accel Mag"]}
+                y="accelMag_g", 
+                color="source", 
+                facet_row="phone_id",
+                color_discrete_map={"Phone": "blue", "Reference": "red"},
+                category_orders={"phone_id": sorted(df["phone_id"].unique())},
+                labels={"accelMag_g": "Accel Mag (g)", "time_ns": "Time (ns)", "source": "Signal Type"},
+                height=300 * len(df["phone_id"].unique())
             )
-            fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
             fig.update_yaxes(matches=None)
+            fig.for_each_annotation(lambda a: a.update(text=f"Phone {a.text.split('=')[-1]}"))
             return fig
 
+    with ui.card(title="Gyroscope Magnitude Comparison"):
         @render_plotly
         def multi_gyro_plot():
-            df = drop_data()
-            df_long = df.melt(
-                id_vars=["time_ns", "source_file"], 
-                value_vars=["gyroX_dps", "gyroY_dps", "gyroZ_dps","gyroMag_dps"],
-                var_name="sensor_axis", 
-                value_name="dps"
-            )
-
-            labels = {
-                "gyroX_dps": "Gyro X",
-                "gyroY_dps": "Gyro Y",
-                "gyroZ_dps": "Gyro Z",
-                "gyroMag_dps": "Gyro Mag"
-            }
-            df_long["sensor_axis"] = df_long["sensor_axis"].map(labels)
-
+            df = drop_test_combined_data()
+            if df.empty:
+                return px.scatter(title="No data found for this test")
+                
             fig = px.line(
-                df_long, 
+                df, 
                 x="time_ns", 
-                y="dps", 
-                facet_row="sensor_axis",
-                color="source_file",
-                labels={"dps": "Degrees/s", "time_ns": "Time (ns)", "source_file": "Phone ID"},
-                category_orders={"sensor_axis": ["Gyro X", "Gyro Y", "Gyro Z","Gyro Mag"]}
+                y="gyroMag_dps", 
+                color="source", 
+                facet_row="phone_id",
+                color_discrete_map={"Phone": "blue", "Reference": "red"},
+                category_orders={"phone_id": sorted(df["phone_id"].unique())},
+                labels={"gyroMag_dps": "Gyro Mag (dps)", "time_ns": "Time (ns)", "source": "Signal Type"},
+                height=300 * len(df["phone_id"].unique())
             )
-
-            fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
             fig.update_yaxes(matches=None)
-            
+            fig.for_each_annotation(lambda a: a.update(text=f"Phone {a.text.split('=')[-1]}"))
             return fig
 
         
-#Reactives JLR -------------------------------------
+# Crash Data -------------------------------------
 @reactive.calc
 def crash_data():
-    # Only load the columns needed for the main line plots + time
     name = input.file()
     path = CRASH_SAMPLE_CHOICES[name]
     return helper.load_phone_data(path=path)
@@ -218,7 +210,7 @@ with ui.nav_panel("Crash Data"):
             )
             return fig
 
-#Sensor Abilities ------------------------------------ 
+# Sensor Abilities ------------------------------------ 
 
 @reactive.calc
 def devices_data():

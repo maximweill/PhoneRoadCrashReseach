@@ -3,3 +3,4 @@ shinywidgets
 pandas
 plotly
 pyarrow
+scipy
