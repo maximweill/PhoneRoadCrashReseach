@@ -149,6 +149,65 @@ with ui.nav_panel("Phone Drop Test Data"):
             fig.for_each_annotation(lambda a: a.update(text=f"Phone {a.text.split('=')[-1]}"))
             return fig
 
+    with ui.accordion(open=False):
+        with ui.accordion_panel("Accelerometer Components"):
+            @render_plotly
+            def multi_accel_components_plot():
+                df = drop_test_combined_data()
+                if df.empty:
+                    return px.scatter(title="No data found for this test")
+                
+                df_melted = df.melt(
+                    id_vars=["time_ns", "source", "phone_id"], 
+                    value_vars=["accelX_g", "accelY_g", "accelZ_g"],
+                    var_name="component",
+                    value_name="accel_g"
+                )
+                
+                fig = px.line(
+                    df_melted, 
+                    x="time_ns", 
+                    y="accel_g", 
+                    color="component", 
+                    line_dash="source",
+                    facet_row="phone_id",
+                    category_orders={"phone_id": sorted(df["phone_id"].unique())},
+                    labels={"accel_g": "Accel (g)", "time_ns": "Time (ns)", "source": "Signal Type", "component": "Component"},
+                    height=300 * len(df["phone_id"].unique())
+                )
+                fig.update_yaxes(matches=None)
+                fig.for_each_annotation(lambda a: a.update(text=f"Phone {a.text.split('=')[-1]}"))
+                return fig
+
+        with ui.accordion_panel("Gyroscope Components"):
+            @render_plotly
+            def multi_gyro_components_plot():
+                df = drop_test_combined_data()
+                if df.empty:
+                    return px.scatter(title="No data found for this test")
+                
+                df_melted = df.melt(
+                    id_vars=["time_ns", "source", "phone_id"], 
+                    value_vars=["gyroX_dps", "gyroY_dps", "gyroZ_dps"],
+                    var_name="component",
+                    value_name="gyro_dps"
+                )
+                
+                fig = px.line(
+                    df_melted, 
+                    x="time_ns", 
+                    y="gyro_dps", 
+                    color="component", 
+                    line_dash="source",
+                    facet_row="phone_id",
+                    category_orders={"phone_id": sorted(df["phone_id"].unique())},
+                    labels={"gyro_dps": "Gyro (dps)", "time_ns": "Time (ns)", "source": "Signal Type", "component": "Component"},
+                    height=300 * len(df["phone_id"].unique())
+                )
+                fig.update_yaxes(matches=None)
+                fig.for_each_annotation(lambda a: a.update(text=f"Phone {a.text.split('=')[-1]}"))
+                return fig
+
         
 # Crash Data -------------------------------------
 @reactive.calc

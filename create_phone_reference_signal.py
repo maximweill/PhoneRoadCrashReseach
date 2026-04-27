@@ -20,12 +20,6 @@ def reformat_csv(csv_file):
     }
     df = df.rename(columns=rename_map)
     ##match with phones
-    rename_map = {
-        'gyroZ_dps': 'gyroZ_dps',
-        'gyroX_dps': 'gyroY_dps',
-        'gyroY_dps': 'gyroX_dps',
-        'accelZ_g': 'accelZ_g',
-    }
     df = df.rename(columns={
         'gyroX_dps': 'gyroX_tmp',
         'gyroY_dps': 'gyroY_tmp'
@@ -33,6 +27,14 @@ def reformat_csv(csv_file):
     df = df.rename(columns={
         'gyroX_tmp': 'gyroY_dps',
         'gyroY_tmp': 'gyroX_dps'
+    })
+    df = df.rename(columns={
+        'accelX_g': 'accelX_tmp',
+        'accelY_g': 'accelY_tmp'
+    })
+    df = df.rename(columns={
+        'accelX_tmp': 'accelY_g',
+        'accelY_tmp': 'accelX_g'
     })
     df = df.rename(columns=rename_map)
     
