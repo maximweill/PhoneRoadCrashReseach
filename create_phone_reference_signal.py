@@ -52,28 +52,28 @@ def reformat_csv(csv_file):
 
 def resample_signal(df, target_freq_hz):
     """
-    Resamples a dataframe to a target frequency.
+    Resamples a dataframe to a target frequency using simple linear interpolation.
     Assumes time_ns is the time column.
     """
     if df.empty:
         return df
         
     duration_ns = df["time_ns"].iloc[-1] - df["time_ns"].iloc[0]
-    num_samples = num_samples = int(np.round(duration_ns * 1e-9 * target_freq_hz)) + 1
+    num_samples = int(np.round(duration_ns * 1e-9 * target_freq_hz)) + 1
     
     if num_samples <= 1:
         return df
 
-    # Exclude time column for resampling
+    # Create new time axis
+    new_time = np.linspace(df["time_ns"].iloc[0], df["time_ns"].iloc[-1], num_samples)
+    resampled_data = {"time_ns": new_time}
+    
+    # Exclude time column for interpolation
     data_cols = [c for c in df.columns if c != "time_ns"]
-    resampled_data = {}
     
-    # Resample each column
+    # Interpolate each column
     for col in data_cols:
-        resampled_data[col] = signal.resample(df[col].values, num_samples)
-    
-    # Reconstruct time axis
-    resampled_data["time_ns"] = np.linspace(df["time_ns"].iloc[0], df["time_ns"].iloc[-1], num_samples)
+        resampled_data[col] = np.interp(new_time, df["time_ns"].values, df[col].values)
     
     return pd.DataFrame(resampled_data)
 
