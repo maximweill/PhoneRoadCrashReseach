@@ -43,7 +43,7 @@ def frame_data(df, t0=5e7, tf=50e7, trigger=7.9):
         # 4. Slice and return
         return df
 
-def convert_csv_to_parquet(csv_file="data.csv", pq_file="data_parquet",downsample = 1, framer_df = None):
+def convert_csv_to_parquet(csv_file="data.csv", pq_file="data_parquet",downsample = 1, framer_df = None,skiprows=0):
     if framer_df is not None:
         # Find the row for this file
         params = framer_df[framer_df["phone_file"] == csv_file.name]
@@ -56,7 +56,7 @@ def convert_csv_to_parquet(csv_file="data.csv", pq_file="data_parquet",downsampl
         ref_length = int(params.iloc[0]["ref_length"])
         lag_time = int(params.iloc[0]["lag_ns"])
         
-        df = pd.read_csv(csv_file)
+        df = pd.read_csv(csv_file,skiprows=skiprows)
         
         df["time_ns"] += lag_time
         # Slice the data
@@ -65,7 +65,7 @@ def convert_csv_to_parquet(csv_file="data.csv", pq_file="data_parquet",downsampl
         df_downsampled = df.iloc[::downsample, :]
         df_downsampled.to_parquet(pq_file, engine='pyarrow', index=False, compression='snappy')
     else:
-        df = pd.read_csv(csv_file)
+        df = pd.read_csv(csv_file,skiprows=skiprows)
         if "sensor_time_ns" in df.columns:
             df = df.rename(columns={
                 "sensor_time_ns":"time_ns",
@@ -77,7 +77,7 @@ def convert_csv_to_parquet(csv_file="data.csv", pq_file="data_parquet",downsampl
             df.to_parquet(pq_file, engine='pyarrow', index=False, compression='snappy')
 
 
-def convert_csv_dir_to_parquet(source_dir="data", output_dir="data_parquet",downsample = 1, framer_path = None):
+def convert_csv_dir_to_parquet(source_dir="data", output_dir="data_parquet",downsample = 1, framer_path = None, skiprows=0):
     # Create Path objects
     src_path = Path(source_dir)
     dest_path = Path(output_dir)
@@ -97,18 +97,18 @@ def convert_csv_dir_to_parquet(source_dir="data", output_dir="data_parquet",down
     if framer_path:
         framer_path = Path(framer_path)
         if framer_path.exists():
-            framer_df = pd.read_csv(framer_path)
+            framer_df = pd.read_csv(framer_path,skiprows=skiprows)
         else:
             print(f"Warning: framer_path '{framer_path}' not found.")
 
     for csv_file in csv_files:
         pq_file = dest_path / csv_file.with_suffix(".parquet").name
-        convert_csv_to_parquet(csv_file=csv_file, pq_file=pq_file,downsample = downsample, framer_df = framer_df)
+        convert_csv_to_parquet(csv_file=csv_file, pq_file=pq_file,downsample = downsample, framer_df = framer_df,skiprows=skiprows)
 
 
 
 if __name__ == "__main__":
-    convert_csv_dir_to_parquet(source_dir="car_crash_data_ignore", output_dir="car_crash_data_parquet")
+    #convert_csv_dir_to_parquet(source_dir="car_crash_data_ignore", output_dir="car_crash_data_parquet")
     convert_csv_dir_to_parquet(source_dir="test_log_ignore", output_dir="test_log_parquet")
     convert_csv_dir_to_parquet(source_dir="phone_drop_test_data_ignore/phone_reference_signals", output_dir="phone_drop_test_data_parquet/phone_reference_signals")
     convert_csv_dir_to_parquet(source_dir="phone_drop_test_data_ignore/phone_cleaned", output_dir="phone_drop_test_data_parquet/phone_cleaned", framer_path="test_log_ignore/phone_cropping_params.csv")

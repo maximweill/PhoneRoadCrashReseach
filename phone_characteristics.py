@@ -49,7 +49,8 @@ def calculate_individual_characteristics():
     
     sensor_cols = [
         "accelX_g", "accelY_g", "accelZ_g", "accelMag_g",
-        "gyroX_dps", "gyroY_dps", "gyroZ_dps", "gyroMag_dps"
+        "gyroX_dps", "gyroY_dps", "gyroZ_dps", "gyroMag_dps",
+        "magX_uT", "magY_uT", "magZ_uT", "magMag_uT"
     ]
 
     for file_path in csv_files:
@@ -60,6 +61,20 @@ def calculate_individual_characteristics():
             # Basic stats
             row = {"filename": file_path.name}
             
+            # Battery temperature
+            if "batt_temp_c" in df.columns:
+                row["mean_batt_temp_c"] = df["batt_temp_c"].mean()
+            else:
+                row["mean_batt_temp_c"] = np.nan
+
+            # Initial magnetic field (mean of first 100 samples)
+            for axis in ["X", "Y", "Z"]:
+                col = f"mag{axis}_uT"
+                if col in df.columns:
+                    row[f"initial_{col}"] = df[col].iloc[:100].mean()
+                else:
+                    row[f"initial_{col}"] = np.nan
+
             # Sampling rate stats
             if "time_ns" in df.columns:
                 mean_fs, median_fs, iqr_fs = get_sampling_rate_stats(df["time_ns"].values)
@@ -117,6 +132,12 @@ def aggregate_characteristics(df_individual=None):
         "fs_iqr": "mean"
     }
     
+    # Add new metrics to aggregation rules
+    new_metrics = ["mean_batt_temp_c", "initial_magX_uT", "initial_magY_uT", "initial_magZ_uT"]
+    for col in new_metrics:
+        if col in df_individual.columns:
+            agg_rules[col] = "mean"
+
     max_cols = [c for c in df_individual.columns if c.startswith("max_")]
     for col in max_cols:
         agg_rules[col] = "max"

@@ -4,13 +4,19 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 
-def deduplicate_phone_file(input_path, output_path):
+def recompute_mag(df):
+    df['accelMag_g'] = np.sqrt(df['accelX_g']**2 + df['accelY_g']**2 + df['accelZ_g']**2)
+    df['gyroMag_dps'] = np.sqrt(df['gyroX_dps']**2 + df['gyroY_dps']**2 + df['gyroZ_dps']**2)
+    return df
+
+def deduplicate_phone_file(input_path, output_path,skiprows=0):
     """
     Optimized version using NumPy and vectorized distance calculations.
     Returns a dictionary of statistics for logging.
+
     """
     try:
-        df = pd.read_csv(input_path)
+        df = pd.read_csv(input_path,skiprows = skiprows)
     except Exception as e:
         return {"file": input_path.name, "error": str(e)}
     
@@ -97,7 +103,7 @@ def deduplicate_phone_file(input_path, output_path):
     
     if percent_removed < 0.49 and final_len > 1:
         # Calculate delta t
-        diffs = np.diff(df_cleaned["time_ns"].values)
+        diffs = diffs_init #np.diff(df_cleaned["time_ns"].values)
         
         plt.figure(figsize=(10, 6))
         plt.hist(diffs, bins=500)
@@ -106,6 +112,9 @@ def deduplicate_phone_file(input_path, output_path):
         plt.ylabel("Count")
         plt.grid(True, alpha=0.3)
         plt.show()
+
+
+    df_cleaned = recompute_mag(df_cleaned)
 
     df_cleaned.to_csv(output_path, index=False)
     
@@ -120,12 +129,8 @@ def deduplicate_phone_file(input_path, output_path):
     msg = f"  {input_path.name}: Removed {stats['percent_removed']:.2%} samples. now {final_len}/{initial_len}."
     return {"stats": stats, "message": msg}
 
-def main():
-    src_dir = Path("phone_drop_test_data_ignore/phone")
-    dest_dir = Path("phone_drop_test_data_ignore/phone_cleaned")
+def deduplicate_csv_dir(src_dir,dest_dir,log_file,skiprows=0):
     dest_dir.mkdir(parents=True, exist_ok=True)
-    
-    log_file = Path("test_log_ignore/deduplication_log.csv")
     
     phone_files = list(src_dir.glob("*.csv"))
     print(f"Deduplicating {len(phone_files)} files...")
@@ -133,7 +138,7 @@ def main():
     all_stats = []
     
     with ProcessPoolExecutor() as executor:
-        futures = [executor.submit(deduplicate_phone_file, f, dest_dir / f.name) for f in phone_files]
+        futures = [executor.submit(deduplicate_phone_file, f, dest_dir / f.name, skiprows=skiprows) for f in phone_files]
         
         for future in futures:
             res = future.result()
@@ -150,4 +155,5 @@ def main():
     print(f"\nDeduplication complete. Detailed log saved to {log_file}")
 
 if __name__ == "__main__":
-    main()
+    deduplicate_csv_dir(Path("phone_drop_test_data_ignore/phone"),Path("phone_drop_test_data_ignore/phone_cleaned"),log_file = Path("test_log_ignore/deduplication_log1.csv"))
+    #deduplicate_csv_dir(Path("phone_drop_test_data_ignore/phone_01052026"),Path("phone_drop_test_data_ignore/phone_cleaned"),log_file = Path("test_log_ignore/deduplication_log2.csv"),skiprows = 4)
