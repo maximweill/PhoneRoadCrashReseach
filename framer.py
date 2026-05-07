@@ -3,88 +3,78 @@ import numpy as np
 from scipy import signal
 from pathlib import Path
 
-def frame_2_ref(df, reference, column="gyroMag_dps"):
+def frame_2_ref(df_phone, df_ref, p_col="RotVelRes (rad/s)", r_col="RotVelRes (rad/s)"):
     """
-    Finds the lag between df and reference using cross-correlation.
-    Returns the lag in terms of indices.
+    Finds the lag between df_phone and df_ref using cross-correlation.
     """
-    # Normalize signals
-    sig1 = df[column].values
-    sig2 = reference[column].values
+    sig_p = np.nan_to_num(df_phone[p_col].values)
+    sig_r = np.nan_to_num(df_ref[r_col].values)
     
-    # Handle potential NaNs from resampling or normalization
-    sig1 = np.nan_to_num(sig1)
-    sig2 = np.nan_to_num(sig2)
+    sig_p = (sig_p - np.mean(sig_p)) / (np.std(sig_p) + 1e-9)
+    sig_r = (sig_r - np.mean(sig_r)) / (np.std(sig_r) + 1e-9)
     
-    sig1 = (sig1 - np.mean(sig1)) / (np.std(sig1) + 1e-9)
-    sig2 = (sig2 - np.mean(sig2)) / (np.std(sig2) + 1e-9)
+    corr = signal.correlate(sig_p, sig_r, mode='full', method='fft')
+    lags = signal.correlation_lags(len(sig_p), len(sig_r), mode='full')
     
-    # Cross-correlation using FFT
-    corr = signal.correlate(sig1, sig2, mode='full', method='fft')
-    lags = signal.correlation_lags(len(sig1), len(sig2), mode='full')
-    
-    best_lag = lags[np.argmax(corr)]
-    
-    return best_lag
+    return lags[np.argmax(corr)]
 
 def main():
-    # UPDATED: Points to cleaned phone data and CSV reference signals
     phone_dir = Path("phone_drop_test_data_ignore/phone_cleaned")
     ref_dir = Path("phone_drop_test_data_ignore/phone_reference_signals")
-    output_csv = Path("test_log_ignore/phone_cropping_params.csv")
+    output_dir = Path("phone_drop_test_data_ignore/phone_framed")
+    log_csv = Path("test_log_ignore/framing_logs.csv")
+    
+    output_dir.mkdir(parents=True, exist_ok=True)
     
     results = []
-    
     phone_files = list(phone_dir.glob("*.csv"))
     
     for phone_file in phone_files:
-        # UPDATED: Reference files are now CSV
-        ref_file = ref_dir / f"{phone_file.stem}_REF.csv"
-        
-        if not ref_file.exists():
-            print(f"Skipping {phone_file.name}: Reference file not found.")
-            continue
+        parts = phone_file.stem.split("_")
+        if len(parts) < 4: continue
             
-        print(f"Processing {phone_file.name}...")
+        speed, config, repeat, phone_id = parts[0], parts[1], parts[2], parts[3]
+        
+        # Construct reference name
+        ref_name = f"{speed}_{config}_{repeat}_Headform_Unfiltered_Transformed_{phone_id}_REF.csv"
+        ref_path = ref_dir / ref_name
+        
+        if not ref_path.exists():
+            print(f"Skipping {phone_file.name}: Reference {ref_name} not found.")
+            continue
         
         try:
-            df_phone = pd.read_csv(phone_file)
-            df_ref = pd.read_csv(ref_file)
+            df_p = pd.read_csv(phone_file)
+            df_r = pd.read_csv(ref_path)
             
-            # Use gyroMag
-            col = "gyroMag_dps"
-            lag_idx = frame_2_ref(df_phone, df_ref, column=col)
+            lag_idx = frame_2_ref(df_p, df_r)
             
-            # Calculate time offset based on phone's sampling rate
-            time_col = "time_ns"
-            dts = np.diff(df_phone[time_col].values)
-            avg_dt = np.median(dts)
-            q1,q3 = np.quantile(dts, [0.25, 0.75])
-
-            t0_ref = df_ref[time_col].iloc[0]
-
-            # Correct lag_ns: The timestamp in df_phone at lag_idx should align with t0_ref.
-            # df_phone[time_col].iloc[lag_idx] + lag_ns = t0_ref
-            lag_ns = t0_ref - df_phone[time_col].iloc[lag_idx]
-
+            # Time alignment
+            t0_r = df_r["Time (s)"].iloc[0]
+            t_at_lag = df_p["Time (s)"].iloc[max(0, min(lag_idx, len(df_p)-1))]
+            offset = t0_r - t_at_lag
+            
+            # Crop
+            df_framed = df_p.iloc[max(0, lag_idx) : min(len(df_p), lag_idx + len(df_r))].copy()
+            df_framed["Time (s)"] += offset
+            
+            # Save
+            out_name = phone_file.name.replace("_cleaned.csv", "_framed.csv")
+            df_framed.to_csv(output_dir / out_name, index=False)
+            
             results.append({
-                "phone_file": phone_file.name,
-                "ref_file": ref_file.name,
-                "lag_indices": lag_idx,
-                "ref_length": len(df_ref),
-                "lag_ns": lag_ns,
-                "avg_dt": avg_dt,
-                "IQR":q3-q1,
+                "speed": speed, "config": config, "repeat": repeat, "phone_id": phone_id,
+                "phone_file": phone_file.name, "ref_file": ref_name, "framed_file": out_name,
+                "lag": lag_idx, "offset": offset
             })
+            print(f"Processed {phone_file.name}")
             
         except Exception as e:
             print(f"Error processing {phone_file.name}: {e}")
             
     if results:
-        pd.DataFrame(results).to_csv(output_csv, index=False)
-        print(f"Cropping parameters saved to {output_csv}")
-    else:
-        print("No results generated.")
+        pd.DataFrame(results).to_csv(log_csv, index=False)
+        print(f"Logs saved to {log_csv}")
 
 if __name__ == "__main__":
     main()

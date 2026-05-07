@@ -1,150 +1,106 @@
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from scipy import signal
+import re
+from scipy.interpolate import interp1d
+from concurrent.futures import ProcessPoolExecutor
 
-def reformat_csv(csv_file):
-    df = pd.read_csv(csv_file, skiprows=22)
-    df.columns = df.columns.str.strip()
-    df['Time'] = (df['Time'] * 1e9).astype(int)
-
-    #iso naming
-    rename_map = {
-        'Chan 0:6DX0855-AV1': 'gyroZ_dps',
-        'Chan 1:6DX0855-AV2': 'gyroY_dps',
-        'Chan 2:6DX0855-AV3': 'gyroX_dps',
-        'Chan 3:6DX0855-AC1': 'accelZ_g',
-        'Chan 4:6DX0855-AC2': 'accelY_g',
-        'Chan 5:6DX0855-AC3': 'accelX_g',
-        'Time': 'time_ns'
-    }
-    df = df.rename(columns=rename_map)
-    ##match with phones
-    df = df.rename(columns={
-        'gyroX_dps': 'gyroX_tmp',
-        'gyroY_dps': 'gyroY_tmp'
-    })
-    df = df.rename(columns={
-        'gyroX_tmp': 'gyroY_dps',
-        'gyroY_tmp': 'gyroX_dps'
-    })
-    df = df.rename(columns={
-        'accelX_g': 'accelX_tmp',
-        'accelY_g': 'accelY_tmp'
-    })
-    df = df.rename(columns={
-        'accelX_tmp': 'accelY_g',
-        'accelY_tmp': 'accelX_g'
-    })
-    df = df.rename(columns=rename_map)
-    
-    df['gyroZ_dps'] *= 1 #??
-    df['accelZ_g'] *= 1 #??
-    df['gyroX_dps'] *= -1
-    df['accelX_g'] *= -1
-    df['gyroY_dps'] *= -1
-    df['accelY_g'] *= -1
-
-    df['accelMag_g'] = np.sqrt(df['accelX_g']**2 + df['accelY_g']**2 + df['accelZ_g']**2)
-    df['gyroMag_dps'] = np.sqrt(df['gyroX_dps']**2 + df['gyroY_dps']**2 + df['gyroZ_dps']**2)
-    return df
-
-
-def resample_signal(df, target_freq_hz):
+def extract_phone_id(filename):
     """
-    Resamples a dataframe to a target frequency using simple linear interpolation.
-    Assumes time_ns is the time column.
+    Extracts PhoneID from filename (e.g., Phone001, Phone_001).
     """
-    if df.empty:
-        return df
+    match = re.search(r"Phone_?(\d+)", filename, re.IGNORECASE)
+    if match:
+        return f"Phone{match.group(1)}"
+    return None
+
+def process_single_file(excel_path, target_fs, output_dir):
+    """
+    Processes a single headform Excel file: resamples it and saves as CSV.
+    """
+    try:
+        # Load the transformed headform data
+        df = pd.read_excel(excel_path)
         
-    duration_ns = df["time_ns"].iloc[-1] - df["time_ns"].iloc[0]
-    num_samples = int(np.round(duration_ns * 1e-9 * target_freq_hz)) + 1
-    
-    if num_samples <= 1:
-        return df
+        if "Time (s)" not in df.columns:
+            return f"Error: 'Time (s)' column not found in {excel_path.name}"
 
-    # Create new time axis
-    new_time = np.linspace(df["time_ns"].iloc[0], df["time_ns"].iloc[-1], num_samples)
-    resampled_data = {"time_ns": new_time}
-    
-    # Exclude time column for interpolation
-    data_cols = [c for c in df.columns if c != "time_ns"]
-    
-    # Interpolate each column
-    for col in data_cols:
-        resampled_data[col] = np.interp(new_time, df["time_ns"].values, df[col].values)
-    
-    return pd.DataFrame(resampled_data)
+        time_orig = df["Time (s)"].values
+        
+        # Define target time axis
+        # We preserve the start and end of the original signal
+        t_start = time_orig[0]
+        t_end = time_orig[-1]
+        dt_target = 1.0 / target_fs
+        
+        time_target = np.arange(t_start, t_end, dt_target)
+        
+        # Resample all columns except Time
+        resampled_data = {"Time (s)": time_target}
+        cols_to_resample = [c for c in df.columns if c != "Time (s)"]
+        
+        for col in cols_to_resample:
+            # Linear interpolation
+            f = interp1d(time_orig, df[col].values, kind='linear', fill_value="extrapolate")
+            resampled_data[col] = f(time_target)
+            
+        df_resampled = pd.DataFrame(resampled_data)
+        
+        # Save as CSV
+        output_path = output_dir / f"{excel_path.stem}_REF.csv"
+        df_resampled.to_csv(output_path, index=False)
+        
+        return f"Successfully processed {excel_path.name} -> {output_path.name} (FS: {target_fs:.2f} Hz)"
+        
+    except Exception as e:
+        return f"Error processing {excel_path.name}: {e}"
 
-def create_reference_signals():
-    # Define paths using raw CSV locations
-    log_path = Path("test_log_ignore/Data Collection Log.csv")
-    headform_dir = Path("phone_drop_test_data_ignore/headform")
-    phone_dir = Path("phone_drop_test_data_ignore/phone_cleaned") 
+def main():
+    headform_dir = Path("phone_drop_test_data_ignore/Transformed_Headform_Data")
+    characteristics_path = Path("test_log_ignore/phone_characteristics_aggregated.csv")
     output_dir = Path("phone_drop_test_data_ignore/phone_reference_signals")
     
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    if not log_path.exists():
-        print(f"Error: Log file not found at {log_path}")
+    if not headform_dir.exists():
+        print(f"Error: Directory {headform_dir} does not exist.")
         return
 
-    # Load the CSV log
-    df_log = pd.read_csv(log_path)
-    groups = df_log.groupby("Test Name")
-    
-    total_created = 0
-    
-    for test_name, group in groups:
-        headform_files = group[group["File Name"].str.contains("_FILTERED", na=False)]["File Name"].tolist()
-        phone_files = group[group["File Name"].str.contains("crash_data", na=False)]["File Name"].tolist()
-        
-        if not headform_files or not phone_files:
-            continue
-            
-        # Raw headform data is in CSV
-        headform_path = headform_dir / f"{headform_files[0]}.csv"
-        if not headform_path.exists():
-            continue
-            
-        # Load raw headform CSV
-        # Note: Based on parquetify.py, headform CSVs have 22 header rows
-        try:
-            df_ref_raw = reformat_csv(headform_path)
-            
-        except Exception as e:
-            print(f"  Error reading headform {headform_path.name}: {e}")
-            continue
-        
-        for phone_stem in phone_files:
-            phone_path = phone_dir / f"{phone_stem}.csv"
-            if not phone_path.exists():
-                phone_path = Path("phone_drop_test_data_ignore/phone") / f"{phone_stem}.csv"
-            
-            if not phone_path.exists():
-                print(f"  Warning: Phone file {phone_stem} not found.")
-                continue
+    if not characteristics_path.exists():
+        print(f"Error: {characteristics_path} not found. Run phone_characteristics.py first.")
+        return
 
-            # 1. Calculate average sampling rate of the phone
-            df_phone = pd.read_csv(phone_path)
-            time_col = "sensor_time_ns" if "sensor_time_ns" in df_phone.columns else "time_ns"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load target sampling rates
+    df_chars = pd.read_csv(characteristics_path)
+    if "phone_id" not in df_chars.columns or "fs_median" not in df_chars.columns:
+        print("Error: phone_characteristics_aggregated.csv missing required columns (phone_id, fs_median).")
+        return
+        
+    sampling_rates = dict(zip(df_chars["phone_id"], df_chars["fs_median"]))
+
+    # Collect Excel files
+    excel_files = list(headform_dir.glob("*.xlsx"))
+    if not excel_files:
+        print("No Excel files found in Transformed_Headform_Data.")
+        return
+
+    print(f"Found {len(excel_files)} files to process.")
+
+    tasks = []
+    for excel_path in excel_files:
+        phone_id = extract_phone_id(excel_path.name)
+        if not phone_id or phone_id not in sampling_rates:
+            print(f"Skipping {excel_path.name}: Could not determine Phone ID or no sampling rate found.")
+            continue
             
-            time_diffs = np.diff(df_phone[time_col].values) * 1e-9 
-            avg_dt = np.median(time_diffs)
-            target_freq = 1.0 / avg_dt
-            
-            # 2. Resample reference to match phone frequency
-            df_ref_resampled = resample_signal(df_ref_raw, target_freq)
-            
-            # 3. Save as CSV
-            dest_path = output_dir / f"{phone_stem}_REF.csv"
-            df_ref_resampled.to_csv(dest_path, index=False)
-            
-            print(f"  Created {dest_path.name} (Resampled to {target_freq:.2f} Hz)")
-            total_created += 1
-                
-    print(f"\nProcess complete. Total reference signals created: {total_created}")
+        target_fs = sampling_rates[phone_id]
+        tasks.append((excel_path, target_fs, output_dir))
+
+    # Process in parallel
+    with ProcessPoolExecutor() as executor:
+        futures = [executor.submit(process_single_file, *task) for task in tasks]
+        for future in futures:
+            print(future.result())
 
 if __name__ == "__main__":
-    create_reference_signals()
+    main()

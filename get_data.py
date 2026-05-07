@@ -1,5 +1,3 @@
-# imports --------
-print("importing data")
 import pandas as pd
 from pathlib import Path
 
@@ -11,33 +9,22 @@ CRASH_DATA_DIR = BASE_DIR / "car_crash_data_parquet"
 CRASH_SAMPLE_CHOICES = {f.stem: str(f) for f in CRASH_DATA_DIR.glob("*.parquet")}
 
 # Phone Drop Tests data ---------------
+PHONE_FRAMED_DIR = BASE_DIR / "phone_drop_test_data_parquet" / "phone_framed"
+PHONE_DROP_SAMPLE_CHOICES = {f.stem: str(f) for f in PHONE_FRAMED_DIR.glob("*.parquet")}
 
-# Phone cleaned data
-PHONE_CLEANED_DIR = BASE_DIR / "phone_drop_test_data_parquet" / "phone_cleaned"
-PHONE_DROP_SAMPLE_CHOICES = {f.stem: str(f) for f in PHONE_CLEANED_DIR.glob("*.parquet")}
-
-# Phone reference signals
 PHONE_REF_DIR = BASE_DIR / "phone_drop_test_data_parquet" / "phone_reference_signals"
 PHONE_REF_SAMPLE_CHOICES = {f.stem: str(f) for f in PHONE_REF_DIR.glob("*.parquet")}
 
-# Logs and Mapping ----------------
+# Logs ----------------
 LOGS_DIR = BASE_DIR / "test_log_parquet" 
 
-# Data Collection Log
+# Core Logs
 LOGS = pd.read_parquet(LOGS_DIR / "Data Collection Log.parquet")
 LOGS_CHOICES = LOGS["Test Name"].dropna().unique().tolist()
-
-# Deduplication Log
-DEDUPLICATION_LOG = pd.read_parquet(LOGS_DIR / "deduplication_log.parquet")
-
-# Phone Cropping Params (The master mapping for phone-to-ref)
-CROPPING_PARAMS = pd.read_parquet(LOGS_DIR / "phone_cropping_params.parquet")
+DEDUPLICATION_LOG = pd.concat([pd.read_parquet(p) for p in LOGS_DIR.glob("deduplication_log*.parquet")], ignore_index=True)
+FRAMING_LOGS = pd.read_parquet(LOGS_DIR / "framing_logs.parquet")
 
 # Phyphox data ---------------
 PHYPHOX_FAST_DATA_DIR = BASE_DIR / "phyphox_data" / "fast_data"
 DEVICE_DATA_DIR_DATA = PHYPHOX_FAST_DATA_DIR / "devices.parquet"
 META_DATA_DIR = PHYPHOX_FAST_DATA_DIR / "metadata.parquet"
-
-# print -------------------
-print(f"Loaded {len(PHONE_DROP_SAMPLE_CHOICES)} phone files and {len(PHONE_REF_SAMPLE_CHOICES)} reference signals.")
-print("Loaded data")

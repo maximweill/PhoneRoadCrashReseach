@@ -3,11 +3,15 @@ import numpy as np
 from pathlib import Path
 import re
 
-def get_sampling_rate_stats(time_ns):
-    if len(time_ns) < 2:
+def get_sampling_rate_stats(time_values, is_ns=True):
+    if len(time_values) < 2:
         return np.nan, np.nan, np.nan
     
-    diffs = np.diff(time_ns) * 1e-9  # convert to seconds
+    if is_ns:
+        diffs = np.diff(time_values) * 1e-9  # convert to seconds
+    else:
+        diffs = np.diff(time_values)
+        
     # Filter out zero or negative diffs to avoid division by zero
     diffs = diffs[diffs > 0]
     
@@ -32,34 +36,67 @@ def extract_phone_id(filename):
         return f"Phone{match.group(1)}"
     return "Unknown"
 
+def extract_metadata(file_path):
+    """
+    Extracts metadata from the first 4 lines of a CSV file if they start with #.
+    """
+    metadata = {}
+    try:
+        with open(file_path, 'r') as f:
+            for _ in range(4):
+                line = f.readline()
+                if line.startswith("#"):
+                    parts = line.lstrip("#").split(":", 1)
+                    if len(parts) == 2:
+                        key = parts[0].strip()
+                        value = parts[1].strip()
+                        metadata[key] = value
+    except Exception as e:
+        print(f"  Error extracting metadata from {file_path.name}: {e}")
+    return metadata
+
 def calculate_individual_characteristics():
     cleaned_dir = Path("phone_drop_test_data_ignore/phone_cleaned")
+    source_dir_with_header = Path("phone_drop_test_data_ignore/phone_01052026")
     output_path = Path("test_log_ignore/phone_characteristics.csv")
     
     if not cleaned_dir.exists():
         print(f"Error: Directory {cleaned_dir} does not exist.")
         return None
 
-    csv_files = list(cleaned_dir.glob("*.csv"))
-    if not csv_files:
-        print("No CSV files found in cleaned directory.")
+    files = list(cleaned_dir.glob("*.csv")) + list(cleaned_dir.glob("*.parquet"))
+    if not files:
+        print("No CSV or Parquet files found in cleaned directory.")
         return None
 
     results = []
     
     sensor_cols = [
-        "accelX_g", "accelY_g", "accelZ_g", "accelMag_g",
-        "gyroX_dps", "gyroY_dps", "gyroZ_dps", "gyroMag_dps",
+        "LinAccX (m/s2)", "LinAccY (m/s2)", "LinAccZ (m/s2)", "LinAccMag (m/s2)",
+        "RotVelX (rad/s)", "RotVelY (rad/s)", "RotVelZ (rad/s)", "RotMag (rad/s)",
+        "RotAccX (rad/s2)", "RotAccY (rad/s2)", "RotAccZ (rad/s2)", "RotAccMag (rad/s2)",
         "magX_uT", "magY_uT", "magZ_uT", "magMag_uT"
     ]
 
-    for file_path in csv_files:
+    for file_path in files:
         print(f"Processing {file_path.name}...")
         try:
-            df = pd.read_csv(file_path)
+            if file_path.suffix == ".csv":
+                df = pd.read_csv(file_path)
+            elif file_path.suffix == ".parquet":
+                df = pd.read_parquet(file_path)
+            else:
+                continue
             
             # Basic stats
             row = {"filename": file_path.name}
+            
+            # Metadata from source header if available
+            source_file = source_dir_with_header / file_path.name
+            if source_file.exists():
+                metadata = extract_metadata(source_file)
+                for key, value in metadata.items():
+                    row[key] = value
             
             # Battery temperature
             if "batt_temp_c" in df.columns:
@@ -76,8 +113,13 @@ def calculate_individual_characteristics():
                     row[f"initial_{col}"] = np.nan
 
             # Sampling rate stats
-            if "time_ns" in df.columns:
-                mean_fs, median_fs, iqr_fs = get_sampling_rate_stats(df["time_ns"].values)
+            if "Time (s)" in df.columns:
+                mean_fs, median_fs, iqr_fs = get_sampling_rate_stats(df["Time (s)"].values, is_ns=False)
+                row["fs_mean"] = mean_fs
+                row["fs_median"] = median_fs
+                row["fs_iqr"] = iqr_fs
+            elif "time_ns" in df.columns:
+                mean_fs, median_fs, iqr_fs = get_sampling_rate_stats(df["time_ns"].values, is_ns=True)
                 row["fs_mean"] = mean_fs
                 row["fs_median"] = median_fs
                 row["fs_iqr"] = iqr_fs
@@ -142,14 +184,36 @@ def aggregate_characteristics(df_individual=None):
     for col in max_cols:
         agg_rules[col] = "max"
         
+    # Metadata fields to aggregate with mode
+    metadata_cols = ["Device", "Accelerometer", "Gyroscope", "Magnetometer"]
+    for col in metadata_cols:
+        if col in df_individual.columns:
+            agg_rules[col] = lambda x: x.mode().iloc[0] if not x.mode().empty else np.nan
+
     df_aggregated = df_individual.groupby("phone_id").agg(agg_rules).reset_index()
+
+    # Check for metadata inconsistencies
+    print("Checking for metadata inconsistencies...")
+    for col in metadata_cols:
+        if col in df_individual.columns:
+            # Map phone_id to its mode for this column
+            modes = df_aggregated.set_index("phone_id")[col]
+            for _, row in df_individual.iterrows():
+                val = row[col]
+                phone_id = row["phone_id"]
+                expected = modes[phone_id]
+                
+                # Check if both values exist and differ
+                if pd.notna(expected) and pd.notna(val) and val != expected:
+                     print(f"  WARNING: Inconsistent {col} for {row['filename']}: expected '{expected}', found '{val}'")
     
-    # Rounding for cleanliness
-    df_aggregated = df_aggregated.round(3)
+    # Rounding for cleanliness (only for numeric columns)
+    numeric_cols = df_aggregated.select_dtypes(include=[np.number]).columns
+    df_aggregated[numeric_cols] = df_aggregated[numeric_cols].round(3)
     
     df_aggregated.to_csv(output_path, index=False)
     print(f"Exported aggregated characteristics to {output_path}")
 
 if __name__ == "__main__":
-    df = calculate_individual_characteristics()
-    aggregate_characteristics(df)
+    characteristics_df = calculate_individual_characteristics()
+    aggregate_characteristics(characteristics_df)

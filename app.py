@@ -5,210 +5,161 @@ import plotly.express as px
 import pandas as pd
 import numpy as np
 import helper
+from pathlib import Path
 from get_data import (
     CRASH_SAMPLE_CHOICES,
     LOGS,
     LOGS_CHOICES,
     DEDUPLICATION_LOG,
-    CROPPING_PARAMS,
+    FRAMING_LOGS,
     PHONE_DROP_SAMPLE_CHOICES,
     PHONE_REF_SAMPLE_CHOICES,
     DEVICE_DATA_DIR_DATA,
     META_DATA_DIR
 )
 
+# Home --------------------------------------------------------
+with ui.nav_panel("Home"):  
+    ui.markdown(
+        """
+        # Phone Road Crash Research Portal
+        Welcome to the research dashboard for investigating smartphone sensor performance in road crash scenarios.
+
+        ### Data Modules
+        * **Phone Drop Test Data**: Controlled laboratory tests conducted at Imperial College London.
+        * **Crash Data**: Real-world and sled-based car crash records.
+        * **Sensor Abilities**: Global smartphone hardware specifications from Phyphox SensorDB.
+
+        ---
+        _Developed by Maxim Weill_
+        """
+    )
+
 # Phone Drop Tests --------------------------------------------------------
 @reactive.calc
-def drop_test_log():
-    name = input.test_name()
-    filter_name = LOGS[LOGS["Test Name"] == name]
-    return filter_name
+def filtered_logs():
+    df = FRAMING_LOGS.copy()
+    if input.speed() != "All": df = df[df["speed"] == input.speed()]
+    if input.config() != "All": df = df[df["config"] == input.config()]
+    if input.repeat() != "All": df = df[df["repeat"] == input.repeat()]
+    if input.phone() != "All": df = df[df["phone_id"] == input.phone()]
+    return df
 
 @reactive.calc
-def drop_test_combined_data():
-    log = drop_test_log()
-    if log.empty:
-        return pd.DataFrame()
-    
-    phone_filenames = log[log["File Name"].str.contains("crash_data", na=False)]["File Name"].tolist()
+def drop_test_data():
+    logs = filtered_logs()
+    if logs.empty: return pd.DataFrame()
     
     all_dfs = []
-    for filename in phone_filenames:
-        # Ensure filename has .csv for matching if it doesn't already
-        lookup_name = filename if filename.endswith(".csv") else f"{filename}.csv"
-        stem = filename.replace(".csv", "")
+    for _, row in logs.iterrows():
+        p_stem = Path(row["framed_file"]).stem
+        r_stem = Path(row["ref_file"]).stem
         
-        if stem in PHONE_DROP_SAMPLE_CHOICES:
-            phone_id = stem.split("_")[-1]
-            
-            # Load Phone Data
-            df_p = helper.load_phone_data(PHONE_DROP_SAMPLE_CHOICES[stem])
-            df_p["source"] = "Phone"
-            df_p["phone_id"] = phone_id
-            df_p["file_stem"] = stem
+        if p_stem in PHONE_DROP_SAMPLE_CHOICES:
+            df_p = helper.load_phone_data(PHONE_DROP_SAMPLE_CHOICES[p_stem])
+            df_p["source"], df_p["phone_id"] = "Phone", row["phone_id"]
+            df_p["file"] = p_stem
             all_dfs.append(df_p)
             
-            # Try to load Reference Data using lookup_name
-            match = CROPPING_PARAMS[CROPPING_PARAMS["phone_file"] == lookup_name]
-            if not match.empty:
-                ref_filename = match.iloc[0]["ref_file"]
-                # Clean up ref_stem to match PHONE_REF_SAMPLE_CHOICES keys
-                ref_stem = ref_filename.replace(".csv", "").replace(".parquet", "")
-                
-                if ref_stem in PHONE_REF_SAMPLE_CHOICES:
-                    df_r = helper.load_reference_data(PHONE_REF_SAMPLE_CHOICES[ref_stem])
-                    df_r["source"] = "Reference"
-                    df_r["phone_id"] = phone_id
-                    df_r["file_stem"] = stem
-                    all_dfs.append(df_r)
-                    
-    if not all_dfs:
-        return pd.DataFrame()
-        
-    return pd.concat(all_dfs, ignore_index=True)
+        if r_stem in PHONE_REF_SAMPLE_CHOICES:
+            df_r = helper.load_reference_data(PHONE_REF_SAMPLE_CHOICES[r_stem])
+            df_r["source"], df_r["phone_id"] = "Reference", row["phone_id"]
+            df_r["file"] = r_stem
+            all_dfs.append(df_r)
+            
+    return pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
 
-@reactive.calc
-def drop_test_metadata_summary():
-    log = drop_test_log()
-    if log.empty:
-        return pd.DataFrame()
-    
-    phone_filenames = log[log["File Name"].str.contains("crash_data", na=False)]["File Name"].tolist()
-    summary = []
-    
-    for filename in phone_filenames:
-        row = {"File": filename}
-        
-        # Add dedup info
-        dedup_match = DEDUPLICATION_LOG[DEDUPLICATION_LOG["file"] == filename]
-        if not dedup_match.empty:
-            row["Removed"] = dedup_match.iloc[0]["removed"]
-            row["% Removed"] = f"{dedup_match.iloc[0]['percent_removed']*100:.1f}%"
-            
-        # Add cropping info
-        crop_match = CROPPING_PARAMS[CROPPING_PARAMS["phone_file"] == filename]
-        if not crop_match.empty:
-            row["Lag Index"] = crop_match.iloc[0]["lag_indices"]
-            row["Ref Signal"] = crop_match.iloc[0]["ref_file"]
-            
-        summary.append(row)
-        
-    return pd.DataFrame(summary)
+def plot_component(col):
+    df = drop_test_data()
+    if df.empty: return px.scatter(title="No data")
+    return px.line(
+        df, x="Time (s)", y=col, 
+        color="source", 
+        line_dash="source",
+        color_discrete_map={"Reference": "rgba(255, 0, 0, 0.3)", "Phone": "rgba(0, 0, 255, 0.6)"},
+        line_dash_map={"Reference": "dash", "Phone": "solid"},
+        facet_row="phone_id", 
+        line_group="file"
+    )
 
 with ui.nav_panel("Phone Drop Test Data"):
     with ui.layout_columns():
         with ui.card(title="Filters"):
-            ui.input_select("test_name", "Select Drop Test", choices=sorted(list(LOGS_CHOICES)))
-        with ui.card(title = "Processing Metadata"):
+            ui.input_select("speed", "Speed", choices=["All"] + sorted(FRAMING_LOGS["speed"].unique().tolist()), selected="6mps")
+            ui.input_select("config", "Config", choices=["All"] + sorted(FRAMING_LOGS["config"].unique().tolist()), selected="nYR")
+            ui.input_select("repeat", "Repeat", choices=["All"] + sorted(FRAMING_LOGS["repeat"].unique().tolist()), selected="REPEAT1")
+            ui.input_select("phone", "Phone ID", choices=["All"] + sorted(FRAMING_LOGS["phone_id"].unique().tolist()), selected="All")
+        
+        with ui.card(title="Processing Metadata"):
             @render.data_frame
             def metadata_table():
-                return render.DataTable(drop_test_metadata_summary())
+                return render.DataTable(filtered_logs()[["phone_id", "lag", "offset"]])
             
-    with ui.card(title="Accelerometer Magnitude Comparison"):
-        @render_plotly
-        def multi_accel_plot():
-            df = drop_test_combined_data()
-            if df.empty:
-                return px.scatter(title="No data found for this test")
-            
-            # Using facet_row to separate phones
-            fig = px.line(
-                df, 
-                x="time_ns", 
-                y="accelMag_g", 
-                color="source", 
-                facet_row="phone_id",
-                color_discrete_map={"Phone": "blue", "Reference": "red"},
-                category_orders={"phone_id": sorted(df["phone_id"].unique())},
-                labels={"accelMag_g": "Accel Mag (g)", "time_ns": "Time (ns)", "source": "Signal Type"},
-                height=300 * len(df["phone_id"].unique())
-            )
-            fig.update_yaxes(matches=None)
-            fig.for_each_annotation(lambda a: a.update(text=f"Phone {a.text.split('=')[-1]}"))
-            return fig
+    with ui.layout_columns():
+        with ui.card(title="Accelerometer Comparison (m/s2)"):
+            ui.card_header("Accelerometer Comparison (m/s2)")
+            @render_plotly
+            def accel_plot():
+                return plot_component("LinAccRes (m/s2)")
 
-    with ui.card(title="Gyroscope Magnitude Comparison"):
-        @render_plotly
-        def multi_gyro_plot():
-            df = drop_test_combined_data()
-            if df.empty:
-                return px.scatter(title="No data found for this test")
-                
-            fig = px.line(
-                df, 
-                x="time_ns", 
-                y="gyroMag_dps", 
-                color="source", 
-                facet_row="phone_id",
-                color_discrete_map={"Phone": "blue", "Reference": "red"},
-                category_orders={"phone_id": sorted(df["phone_id"].unique())},
-                labels={"gyroMag_dps": "Gyro Mag (dps)", "time_ns": "Time (ns)", "source": "Signal Type"},
-                height=300 * len(df["phone_id"].unique())
-            )
-            fig.update_yaxes(matches=None)
-            fig.for_each_annotation(lambda a: a.update(text=f"Phone {a.text.split('=')[-1]}"))
-            return fig
+        with ui.card(title="Gyroscope Comparison (rad/s)"):
+            ui.card_header("Gyroscope Comparison (rad/s)")
+            @render_plotly
+            def gyro_plot():
+                return plot_component("RotVelRes (rad/s)")
+        
+        with ui.card(title="Rotational Acceleration (rad/s2)"):
+            ui.card_header("Rotational Acceleration (rad/s2)")
+            @render_plotly
+            def rot_accel_res_plot():
+                return plot_component("RotAccRes (rad/s2)")
 
     with ui.accordion(open=False):
-        with ui.accordion_panel("Accelerometer Components"):
-            @render_plotly
-            def multi_accel_components_plot():
-                df = drop_test_combined_data()
-                if df.empty:
-                    return px.scatter(title="No data found for this test")
-                
-                df_melted = df.melt(
-                    id_vars=["time_ns", "source", "phone_id"], 
-                    value_vars=["accelX_g", "accelY_g", "accelZ_g"],
-                    var_name="component",
-                    value_name="accel_g"
-                )
-                
-                fig = px.line(
-                    df_melted, 
-                    x="time_ns", 
-                    y="accel_g", 
-                    color="component", 
-                    line_dash="source",
-                    facet_row="phone_id",
-                    category_orders={"phone_id": sorted(df["phone_id"].unique())},
-                    labels={"accel_g": "Accel (g)", "time_ns": "Time (ns)", "source": "Signal Type", "component": "Component"},
-                    height=300 * len(df["phone_id"].unique())
-                )
-                fig.update_yaxes(matches=None)
-                fig.for_each_annotation(lambda a: a.update(text=f"Phone {a.text.split('=')[-1]}"))
-                return fig
+        with ui.accordion_panel("Linear Acceleration XYZ Components"):
+            with ui.layout_columns():
+                with ui.card():
+                    ui.card_header("LinAcc X")
+                    @render_plotly
+                    def plot_accel_x(): return plot_component("LinAccX (m/s2)")
+                with ui.card():
+                    ui.card_header("LinAcc Y")
+                    @render_plotly
+                    def plot_accel_y(): return plot_component("LinAccY (m/s2)")
+                with ui.card():
+                    ui.card_header("LinAcc Z")
+                    @render_plotly
+                    def plot_accel_z(): return plot_component("LinAccZ (m/s2)")
 
-        with ui.accordion_panel("Gyroscope Components"):
-            @render_plotly
-            def multi_gyro_components_plot():
-                df = drop_test_combined_data()
-                if df.empty:
-                    return px.scatter(title="No data found for this test")
-                
-                df_melted = df.melt(
-                    id_vars=["time_ns", "source", "phone_id"], 
-                    value_vars=["gyroX_dps", "gyroY_dps", "gyroZ_dps"],
-                    var_name="component",
-                    value_name="gyro_dps"
-                )
-                
-                fig = px.line(
-                    df_melted, 
-                    x="time_ns", 
-                    y="gyro_dps", 
-                    color="component", 
-                    line_dash="source",
-                    facet_row="phone_id",
-                    category_orders={"phone_id": sorted(df["phone_id"].unique())},
-                    labels={"gyro_dps": "Gyro (dps)", "time_ns": "Time (ns)", "source": "Signal Type", "component": "Component"},
-                    height=300 * len(df["phone_id"].unique())
-                )
-                fig.update_yaxes(matches=None)
-                fig.for_each_annotation(lambda a: a.update(text=f"Phone {a.text.split('=')[-1]}"))
-                return fig
+        with ui.accordion_panel("Rotational Velocity XYZ Components"):
+            with ui.layout_columns():
+                with ui.card():
+                    ui.card_header("RotVel X")
+                    @render_plotly
+                    def plot_gyro_x(): return plot_component("RotVelX (rad/s)")
+                with ui.card():
+                    ui.card_header("RotVel Y")
+                    @render_plotly
+                    def plot_gyro_y(): return plot_component("RotVelY (rad/s)")
+                with ui.card():
+                    ui.card_header("RotVel Z")
+                    @render_plotly
+                    def plot_gyro_z(): return plot_component("RotVelZ (rad/s)")
 
-        
+        with ui.accordion_panel("Rotational Acceleration XYZ Components"):
+            with ui.layout_columns():
+                with ui.card():
+                    ui.card_header("RotAcc X")
+                    @render_plotly
+                    def plot_rotacc_x(): return plot_component("RotAccX (rad/s2)")
+                with ui.card():
+                    ui.card_header("RotAcc Y")
+                    @render_plotly
+                    def plot_rotacc_y(): return plot_component("RotAccY (rad/s2)")
+                with ui.card():
+                    ui.card_header("RotAcc Z")
+                    @render_plotly
+                    def plot_rotacc_z(): return plot_component("RotAccZ (rad/s2)")
+
 # Crash Data -------------------------------------
 @reactive.calc
 def crash_data():
@@ -252,7 +203,7 @@ with ui.nav_panel("Crash Data"):
 
     with ui.card(title="Sensor Plots"):
         @render_plotly
-        def accel_plot():
+        def accel_plot_crash():
             df = crash_data()
             fig = px.line(
                 df, x="time_ns", y=["accelX_g", "accelY_g", "accelZ_g"],
@@ -261,7 +212,7 @@ with ui.nav_panel("Crash Data"):
             return fig
 
         @render_plotly
-        def gyro_plot():
+        def gyro_plot_crash():
             df = crash_data()
             fig = px.line(
                 df, x="time_ns", y=["gyroX_dps", "gyroY_dps", "gyroZ_dps"],
@@ -270,6 +221,7 @@ with ui.nav_panel("Crash Data"):
             return fig
 
 # Sensor Abilities ------------------------------------ 
+
 
 @reactive.calc
 def devices_data():
@@ -390,23 +342,3 @@ with ui.nav_panel("Sensor Abilities"):
             )
             return fig
 
-
-
-with ui.nav_panel("About"):  
-    ui.markdown(
-        """
-        **About this site**
-        Data from Claire Baker: Standard car crashes and sled crashes.
-        Processed via **Apache Parquet** for high-performance Imperial College research analysis.
-        """
-    )
-    ui.markdown(
-        """
-        Phone sensor ability data comes from [phyphox sensordb](https://phyphox.org/sensordb).
-        """
-    )
-    ui.markdown(
-        """
-        _This website was made by Maxim Weill._
-        """
-    )
