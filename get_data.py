@@ -23,6 +23,7 @@ LOGS = pd.read_parquet(LOGS_DIR / "Data Collection Log.parquet")
 LOGS_CHOICES = LOGS["Test Name"].dropna().unique().tolist()
 DEDUPLICATION_LOG = pd.concat([pd.read_parquet(p) for p in LOGS_DIR.glob("deduplication_log*.parquet")], ignore_index=True)
 FRAMING_LOGS = pd.read_parquet(LOGS_DIR / "framing_logs.parquet")
+PHONE_CHARACTERISTICS_AGGREGATED = pd.read_parquet(LOGS_DIR / "phone_characteristics_aggregated.parquet")
 
 # Phyphox data ---------------
 PHYPHOX_FAST_DATA_DIR = BASE_DIR / "phyphox_data" / "fast_data"

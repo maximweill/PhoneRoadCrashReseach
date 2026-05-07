@@ -15,7 +15,8 @@ from get_data import (
     PHONE_DROP_SAMPLE_CHOICES,
     PHONE_REF_SAMPLE_CHOICES,
     DEVICE_DATA_DIR_DATA,
-    META_DATA_DIR
+    META_DATA_DIR,
+    PHONE_CHARACTERISTICS_AGGREGATED
 )
 
 # Home --------------------------------------------------------
@@ -34,6 +35,13 @@ with ui.nav_panel("Home"):
         _Developed by Maxim Weill_
         """
     )
+# Tested Phone Characteristics -------------
+with ui.nav_panel("Tested Phone Characteristics"):
+    with ui.card(full_screen=True):
+        ui.card_header("Aggregated Characteristics of Tested Phones")
+        @render.data_frame
+        def phone_characteristics_table():
+            return render.DataTable(PHONE_CHARACTERISTICS_AGGREGATED)
 
 # Phone Drop Tests --------------------------------------------------------
 @reactive.calc
