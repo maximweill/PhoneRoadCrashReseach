@@ -16,7 +16,10 @@ from get_data import (
     PHONE_REF_SAMPLE_CHOICES,
     DEVICE_DATA_DIR_DATA,
     META_DATA_DIR,
-    PHONE_CHARACTERISTICS_AGGREGATED
+    PHONE_CHARACTERISTICS_AGGREGATED,
+    STATIONARY_SAMPLE_CHOICES,
+    STATIONARY_FRAMING_LOGS,
+    STATIONARY_ALLAN_CHOICES
 )
 
 # Home --------------------------------------------------------
@@ -36,12 +39,210 @@ with ui.nav_panel("Home"):
         """
     )
 # Tested Phone Characteristics -------------
+def get_stationary_phones():
+    # Group stationary files by Phone ID and sensor type
+    phones = {}
+    for _, row in STATIONARY_FRAMING_LOGS.iterrows():
+        pid = row["phone_id"]
+        sensor = row["sensor"]
+        stem = Path(row["framed_file"]).stem
+        if pid not in phones: 
+            phones[pid] = {"accel": [], "gyro": []}
+        if sensor in phones[pid]:
+            phones[pid][sensor].append(stem)
+    return phones
+
+STATIONARY_PHONES = get_stationary_phones()
+
+@reactive.calc
+def selected_stationary_accel_data():
+    pid = input.stationary_phone()
+    stems = STATIONARY_PHONES.get(pid, {}).get("accel", [])
+    if not stems: return pd.DataFrame()
+    
+    all_dfs = []
+    for stem in stems:
+        if stem in STATIONARY_SAMPLE_CHOICES:
+            df = helper.load_phone_data(STATIONARY_SAMPLE_CHOICES[stem])
+            df["file"] = stem
+            all_dfs.append(df)
+    return pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
+
+@reactive.calc
+def selected_stationary_gyro_data():
+    pid = input.stationary_phone()
+    stems = STATIONARY_PHONES.get(pid, {}).get("gyro", [])
+    if not stems: return pd.DataFrame()
+    
+    all_dfs = []
+    for stem in stems:
+        if stem in STATIONARY_SAMPLE_CHOICES:
+            df = helper.load_phone_data(STATIONARY_SAMPLE_CHOICES[stem])
+            df["file"] = stem
+            all_dfs.append(df)
+    return pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
+
+@reactive.calc
+def selected_allan_accel_data():
+    pid = input.stationary_phone()
+    stems = STATIONARY_PHONES.get(pid, {}).get("accel", [])
+    if not stems: return pd.DataFrame()
+    
+    all_dfs = []
+    for stem in stems:
+        allan_file = f"{stem}_allan.parquet"
+        if allan_file in STATIONARY_ALLAN_CHOICES:
+            df = helper.load_allan_data(STATIONARY_ALLAN_CHOICES[allan_file])
+            df["file"] = stem
+            all_dfs.append(df)
+    return pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
+
+@reactive.calc
+def selected_allan_gyro_data():
+    pid = input.stationary_phone()
+    stems = STATIONARY_PHONES.get(pid, {}).get("gyro", [])
+    if not stems: return pd.DataFrame()
+    
+    all_dfs = []
+    for stem in stems:
+        allan_file = f"{stem}_allan.parquet"
+        if allan_file in STATIONARY_ALLAN_CHOICES:
+            df = helper.load_allan_data(STATIONARY_ALLAN_CHOICES[allan_file])
+            df["file"] = stem
+            all_dfs.append(df)
+    return pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
+
 with ui.nav_panel("Tested Phone Characteristics"):
     with ui.card(full_screen=True):
         ui.card_header("Aggregated Characteristics of Tested Phones")
         @render.data_frame
         def phone_characteristics_table():
             return render.DataTable(PHONE_CHARACTERISTICS_AGGREGATED)
+
+    with ui.layout_columns():
+        with ui.card():
+            ui.card_header("Stationary Behavior Analysis")
+            ui.input_select("stationary_phone", "Select Phone", choices=list(STATIONARY_PHONES.keys()) if STATIONARY_PHONES else ["None"])
+            
+        with ui.card():
+            ui.card_header("Stationary Noise Floor")
+            @render.text
+            def stationary_stats():
+                df_accel = selected_stationary_accel_data()
+                df_gyro = selected_stationary_gyro_data()
+                
+                res = []
+                if not df_accel.empty:
+                    std_accel = df_accel["LinAccRes (m/s2)"].std()
+                    res.append(f"Accel Noise (RMS): {std_accel:.4f} m/s2")
+                if not df_gyro.empty:
+                    std_gyro = df_gyro["RotVelRes (rad/s)"].std()
+                    res.append(f"Gyro Noise (RMS): {std_gyro:.4f} rad/s")
+                
+                return " | ".join(res) if res else "No data selected."
+
+    with ui.layout_columns():
+        with ui.card(full_screen=True):
+            ui.card_header("Stationary Accelerometer X (m/s2)")
+            @render_plotly
+            def stationary_accel_x_plot():
+                df = selected_stationary_accel_data()
+                if df.empty: return px.scatter(title="No data")
+                fig = px.line(df, x="Time (s)", y="LinAccX (m/s2)", color="file", title="Accel X Noise")
+                fig.update_layout(legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5))
+                return fig
+
+        with ui.card(full_screen=True):
+            ui.card_header("Stationary Accelerometer Y (m/s2)")
+            @render_plotly
+            def stationary_accel_y_plot():
+                df = selected_stationary_accel_data()
+                if df.empty: return px.scatter(title="No data")
+                fig = px.line(df, x="Time (s)", y="LinAccY (m/s2)", color="file", title="Accel Y Noise")
+                fig.update_layout(legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5))
+                return fig
+
+        with ui.card(full_screen=True):
+            ui.card_header("Stationary Accelerometer Z (m/s2)")
+            @render_plotly
+            def stationary_accel_z_plot():
+                df = selected_stationary_accel_data()
+                if df.empty: return px.scatter(title="No data")
+                fig = px.line(df, x="Time (s)", y="LinAccZ (m/s2)", color="file", title="Accel Z Noise")
+                fig.update_layout(legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5))
+                return fig
+
+    with ui.layout_columns():
+        with ui.card(full_screen=True):
+            ui.card_header("Stationary Gyroscope X (rad/s)")
+            @render_plotly
+            def stationary_gyro_x_plot():
+                df = selected_stationary_gyro_data()
+                if df.empty: return px.scatter(title="No data")
+                fig = px.line(df, x="Time (s)", y="RotVelX (rad/s)", color="file", title="Gyro X Noise")
+                fig.update_layout(legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5))
+                return fig
+
+        with ui.card(full_screen=True):
+            ui.card_header("Stationary Gyroscope Y (rad/s)")
+            @render_plotly
+            def stationary_gyro_y_plot():
+                df = selected_stationary_gyro_data()
+                if df.empty: return px.scatter(title="No data")
+                fig = px.line(df, x="Time (s)", y="RotVelY (rad/s)", color="file", title="Gyro Y Noise")
+                fig.update_layout(legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5))
+                return fig
+
+        with ui.card(full_screen=True):
+            ui.card_header("Stationary Gyroscope Z (rad/s)")
+            @render_plotly
+            def stationary_gyro_z_plot():
+                df = selected_stationary_gyro_data()
+                if df.empty: return px.scatter(title="No data")
+                fig = px.line(df, x="Time (s)", y="RotVelZ (rad/s)", color="file", title="Gyro Z Noise")
+                fig.update_layout(legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5))
+                return fig
+
+    with ui.layout_columns():
+        with ui.card(full_screen=True):
+            ui.card_header("Accelerometer Allan Deviation")
+            @render_plotly
+            def stationary_accel_allan_plot():
+                df = selected_allan_accel_data()
+                if df.empty: return px.scatter(title="No Allan data")
+                cols = [c for c in df.columns if any(comp in c for comp in ["X", "Y", "Z"]) and "_sigma" in c]
+                if not cols: return px.scatter(title="No Accel Allan columns")
+                
+                df_melted = df.melt(id_vars=["tau_s", "file"], value_vars=cols, var_name="component", value_name="sigma")
+                df_melted["component"] = df_melted["component"].str.extract(r'(LinAcc[XYZ]|RotVel[XYZ])')
+                
+                fig = px.line(df_melted, x="tau_s", y="sigma", color="file", line_dash="component", title="Accel Allan Deviation")
+                fig.update_xaxes(type="log")
+                fig.update_yaxes(type="log")
+                fig.update_layout(
+                    legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5)
+                )
+                return fig
+
+        with ui.card(full_screen=True):
+            ui.card_header("Gyroscope Allan Deviation")
+            @render_plotly
+            def stationary_gyro_allan_plot():
+                df = selected_allan_gyro_data()
+                if df.empty: return px.scatter(title="No Allan data")
+                cols = [c for c in df.columns if any(comp in c for comp in ["X", "Y", "Z"]) and "_sigma" in c]
+                if not cols: return px.scatter(title="No Gyro Allan columns")
+                
+                df_melted = df.melt(id_vars=["tau_s", "file"], value_vars=cols, var_name="component", value_name="sigma")
+                df_melted["component"] = df_melted["component"].str.extract(r'(LinAcc[XYZ]|RotVel[XYZ])')
+                
+                fig = px.line(df_melted, x="tau_s", y="sigma", color="file", line_dash="component", title="Gyro Allan Deviation")
+                fig.update_xaxes(type="log")
+                fig.update_yaxes(type="log")
+                fig.update_layout(
+                    legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5)
+                )
+                return fig
 
 # Phone Drop Tests --------------------------------------------------------
 @reactive.calc

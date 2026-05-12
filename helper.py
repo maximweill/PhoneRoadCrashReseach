@@ -1,7 +1,21 @@
 import pandas as pd
 import numpy as np
 
+import re
+
+def extract_phone_id(filename):
+    """
+    Extracts PhoneID from filename (e.g., Phone001, Phone_001).
+    """
+    match = re.search(r"Phone_?(\d+)", filename, re.IGNORECASE)
+    if match:
+        return f"Phone{match.group(1)}"
+    return "Unknown"
+
 def load_phone_data(path):
+    return pd.read_parquet(path)
+
+def load_allan_data(path):
     return pd.read_parquet(path)
 
 def load_reference_data(path):
