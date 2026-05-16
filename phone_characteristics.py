@@ -197,7 +197,7 @@ if __name__ == "__main__":
             meta_path=Path("test_log_ignore/deduplication_log2.csv")
         ),
         calculate_individual_characteristics(
-            src_dir=Path("stationary_ignore/cleaned"),
+            src_dir=Path("stationary_ignore/framed"),
             output_path=Path("test_log_ignore/phone_characteristics_stationary.csv"),
             meta_path=Path("test_log_ignore/deduplication_stationary.csv")
         )

@@ -100,15 +100,47 @@ def frame_stationary():
         try:
             df = pd.read_csv(phone_file)
 
-            t0_r = df["Time (s)"].iloc[0]
-            t1_r = df["Time (s)"].iloc[-1]
-            clean = 900 #15min
-            
+            # Impact threshold
+            impact_threshold = 11  # g + buffer
+
+            impact_mask = df["LinAccRes (m/s2)"] > impact_threshold
+            impact_times = df.loc[impact_mask, "Time (s)"].values
+
+            # Split into halves
+            t_start = df["Time (s)"].iloc[0]
+            t_end = df["Time (s)"].iloc[-1]
+            t_mid = (t_start + t_end) / 2
+
+            first_half_impacts = impact_times[impact_times < t_mid]
+            second_half_impacts = impact_times[impact_times > t_mid]
+
+            # Fallback logic
+            if len(first_half_impacts) > 0:
+                start_time = first_half_impacts[-1]
+            else:
+                start_time = t_start  # fallback to first sample
+
+            if len(second_half_impacts) > 0:
+                end_time = second_half_impacts[0]
+            else:
+                end_time = t_end  # fallback to last sample
+
+ 
+            # Optional safety margins
+            buffer_after = 600
+            buffer_before = 60
+
+            start_time += buffer_after
+            end_time -= buffer_before
+
+ 
+            # Trim
             df_framed = df[
-                (df["Time (s)"] > t0_r + clean) &
-                (df["Time (s)"] < t1_r - clean)
+                (df["Time (s)"] > start_time) &
+                (df["Time (s)"] < end_time)
             ].copy()
 
+            # Re-zero time
             df_framed["Time (s)"] -= df_framed["Time (s)"].iloc[0]
             
             df_framed.to_csv(output_path, index=False)

@@ -369,6 +369,168 @@ with ui.nav_panel("Phone Drop Test Data"):
                     @render_plotly
                     def plot_rotacc_z(): return plot_component("RotAccZ (rad/s2)")
 
+# Sensor Correlation --------------------------------------------------------
+@reactive.calc
+def filtered_logs_corr():
+    df = FRAMING_LOGS.copy()
+    if input.corr_speed() != "All": df = df[df["speed"] == input.corr_speed()]
+    if input.corr_config() != "All": df = df[df["config"] == input.corr_config()]
+    if input.corr_repeat() != "All": df = df[df["repeat"] == input.corr_repeat()]
+    if input.corr_phone() != "All": df = df[df["phone_id"] == input.corr_phone()]
+    return df
+
+@reactive.calc
+def correlation_data():
+    logs = filtered_logs_corr()
+    if logs.empty: return pd.DataFrame()
+    
+    all_matched_dfs = []
+    for _, row in logs.iterrows():
+        p_stem = Path(row["framed_file"]).stem
+        r_stem = Path(row["ref_file"]).stem
+        
+        if p_stem in PHONE_DROP_SAMPLE_CHOICES and r_stem in PHONE_REF_SAMPLE_CHOICES:
+            df_p = helper.load_phone_data(PHONE_DROP_SAMPLE_CHOICES[p_stem])
+            df_r = helper.load_reference_data(PHONE_REF_SAMPLE_CHOICES[r_stem])
+            
+            # Align using merge_asof
+            df_p = df_p.sort_values("Time (s)")
+            df_r = df_r.sort_values("Time (s)")
+            
+            merged = pd.merge_asof(
+                df_p, df_r, 
+                on="Time (s)", 
+                direction="nearest", 
+                suffixes=("_phone", "_ref")
+            )
+            merged["phone_id"] = row["phone_id"]
+            merged["file_pair"] = f"{p_stem}_vs_{r_stem}"
+            all_matched_dfs.append(merged)
+            
+    return pd.concat(all_matched_dfs, ignore_index=True) if all_matched_dfs else pd.DataFrame()
+
+def plot_correlation(col):
+    df = correlation_data()
+    if df.empty: return px.scatter(title="No data")
+    
+    col_phone = f"{col}_phone"
+    col_ref = f"{col}_ref"
+    
+    if col_phone not in df.columns or col_ref not in df.columns:
+        return px.scatter(title=f"Column {col} not found")
+
+    num_points = len(df)
+    
+    # Dynamic opacity and downsampling for performance
+    # Values chosen to keep the app responsive and the plot readable
+    if num_points > 100000:
+        opacity = 0.01
+        df = df.sample(n=50000, random_state=42)
+    elif num_points > 50000:
+        opacity = 0.02
+        df = df.sample(n=50000, random_state=42)
+    elif num_points > 10000:
+        opacity = 0.1
+    elif num_points > 5000:
+        opacity = 0.2
+    else:
+        opacity = 0.5
+
+    fig = px.scatter(
+        df, x=col_ref, y=col_phone,
+        color="phone_id",
+        hover_data=["Time (s)", "file_pair"],
+        title=f"Correlation: {col} (n={num_points}{' sampled to 50k' if num_points > 50000 else ''})",
+        labels={col_ref: f"Reference {col}", col_phone: f"Phone {col}"},
+        opacity=opacity,
+        render_mode="webgl" # Force WebGL for performance
+    )
+    
+    # Add red diagonal line
+    min_val = min(df[col_phone].min(), df[col_ref].min())
+    max_val = max(df[col_phone].max(), df[col_ref].max())
+    fig.add_shape(
+        type="line", line=dict(color="Red", dash="dash"),
+        x0=min_val, y0=min_val, x1=max_val, y1=max_val
+    )
+    # Ensure square aspect ratio for better correlation visualization
+    fig.update_yaxes(scaleanchor="x", scaleratio=1)
+    
+    return fig
+
+with ui.nav_panel("Sensor Correlation"):
+    with ui.layout_columns():
+        with ui.card(title="Filters"):
+            ui.input_select("corr_speed", "Speed", choices=["All"] + sorted(FRAMING_LOGS["speed"].unique().tolist()), selected="6mps")
+            ui.input_select("corr_config", "Config", choices=["All"] + sorted(FRAMING_LOGS["config"].unique().tolist()), selected="nYR")
+            ui.input_select("corr_repeat", "Repeat", choices=["All"] + sorted(FRAMING_LOGS["repeat"].unique().tolist()), selected="REPEAT1")
+            ui.input_select("corr_phone", "Phone ID", choices=["All"] + sorted(FRAMING_LOGS["phone_id"].unique().tolist()), selected="All")
+    
+    with ui.layout_columns():
+        with ui.card(full_screen=True):
+            ui.card_header("Accelerometer Correlation (m/s2)")
+            @render_plotly
+            def accel_corr_plot():
+                return plot_correlation("LinAccRes (m/s2)")
+
+        with ui.card(full_screen=True):
+            ui.card_header("Gyroscope Correlation (rad/s)")
+            @render_plotly
+            def gyro_corr_plot():
+                return plot_correlation("RotVelRes (rad/s)")
+        
+        with ui.card(full_screen=True):
+            ui.card_header("Rotational Acceleration Correlation (rad/s2)")
+            @render_plotly
+            def rot_accel_corr_plot():
+                return plot_correlation("RotAccRes (rad/s2)")
+
+    with ui.accordion(open=False):
+        with ui.accordion_panel("Linear Acceleration XYZ Components"):
+            with ui.layout_columns():
+                with ui.card():
+                    ui.card_header("LinAcc X")
+                    @render_plotly
+                    def corr_accel_x(): return plot_correlation("LinAccX (m/s2)")
+                with ui.card():
+                    ui.card_header("LinAcc Y")
+                    @render_plotly
+                    def corr_accel_y(): return plot_correlation("LinAccY (m/s2)")
+                with ui.card():
+                    ui.card_header("LinAcc Z")
+                    @render_plotly
+                    def corr_accel_z(): return plot_correlation("LinAccZ (m/s2)")
+
+        with ui.accordion_panel("Rotational Velocity XYZ Components"):
+            with ui.layout_columns():
+                with ui.card():
+                    ui.card_header("RotVel X")
+                    @render_plotly
+                    def corr_gyro_x(): return plot_correlation("RotVelX (rad/s)")
+                with ui.card():
+                    ui.card_header("RotVel Y")
+                    @render_plotly
+                    def corr_gyro_y(): return plot_correlation("RotVelY (rad/s)")
+                with ui.card():
+                    ui.card_header("RotVel Z")
+                    @render_plotly
+                    def corr_gyro_z(): return plot_correlation("RotVelZ (rad/s)")
+
+        with ui.accordion_panel("Rotational Acceleration XYZ Components"):
+            with ui.layout_columns():
+                with ui.card():
+                    ui.card_header("RotAcc X")
+                    @render_plotly
+                    def corr_rotacc_x(): return plot_correlation("RotAccX (rad/s2)")
+                with ui.card():
+                    ui.card_header("RotAcc Y")
+                    @render_plotly
+                    def corr_rotacc_y(): return plot_correlation("RotAccY (rad/s2)")
+                with ui.card():
+                    ui.card_header("RotAcc Z")
+                    @render_plotly
+                    def corr_rotacc_z(): return plot_correlation("RotAccZ (rad/s2)")
+
 # Crash Data -------------------------------------
 @reactive.calc
 def crash_data():
