@@ -17,15 +17,15 @@ def js_to_dataframe(js_filepath):
 
     data_array_str = match.group(1)
 
-    cleaned = (
+    parsed = (
         data_array_str
         .replace("True", "true")
         .replace("False", "false")
     )
-    cleaned = re.sub(r',\s*([}\]])', r'\1', cleaned)
-    cleaned = re.sub(r'(\{|,)\s*([a-zA-Z0-9_]+)\s*:', r'\1 "\2":', cleaned)
+    parsed = re.sub(r',\s*([}\]])', r'\1', parsed)
+    parsed = re.sub(r'(\{|,)\s*([a-zA-Z0-9_]+)\s*:', r'\1 "\2":', parsed)
 
-    data = json.loads(cleaned)
+    data = json.loads(parsed)
     df = pd.DataFrame(data)
     return df
 

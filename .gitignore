@@ -1,5 +1,5 @@
 # Your custom rule
-*_ignore/
+*_gitignore/
 
 # Highly recommended for Python projects
 __pycache__/

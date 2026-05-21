@@ -61,14 +61,14 @@ Navigate to the local URL provided (typically `http://127.0.0.1:8000`).
 
 To process new raw CSV data:
 
-1. Place raw CSV files in the respective `*_ignore` directories (e.g., `car_crash_data_ignore/`).
-2. Configure the source and destination paths in the `if __name__ == "__main__":` block of `parquetify.py`.
-3. Run the script:
-   ```bash
-   python parquetify.py
-   ```
+1. Update the log in RAW_LOGS 
+2. Place raw CSV files in a new directory `data_processing_gitignore/RAW_DATA`.
+3. Rerun phone characteristics for the new dataset
+4. Add a pipeline for parsing the data within the parse_raw_data.py, and run it to parse the data
+5. Add a pipeline for framing the data (this limits the size used for displaying it), and run it.
+6. Add the relavent directory to any analysis scripts and run them
+7. update and run parquetify.py to create quick readable files for the webapp.
 
-The script will automatically detect the data type, apply coordinate system transformations, frame the data around the impact event, and save it as a compressed Parquet file.
 
 ## Credits
 
