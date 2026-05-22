@@ -75,7 +75,7 @@ LOG_CLEANING_PIPELINE = Pipeline(
     transforms=[
         drop_failed_rows,
         drop_empty_rows,
-        normalize_column_names,
+        normalize_log_columns,
         extract_phone_id,
         parse_test_metadata,
         extract_repeat_from_test_name,

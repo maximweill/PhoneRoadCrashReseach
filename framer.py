@@ -62,8 +62,8 @@ def run_from_clean_log(
             "input_path": input_path,
             "output_path": output_path,
             "ref_path": ref_path,
-            "signal_col": "LinAccRes (m/s2)",
-            "ref_signal_col": "LinAccRes (m/s2)",
+            "signal_col": "RotVelRes (rad/s)",
+            "ref_signal_col": "RotVelRes (rad/s)",
             "outputs" : [],
 
             # carry full metadata forward (this is powerful later)
@@ -91,7 +91,7 @@ if __name__ == "__main__":
 
     run_from_clean_log(
         pipeline=PHONE_DROP_FRAMING_PIPELINE,
-        clean_log_path=Path("data_processing_gitignore/lookup_tables/Data Collection Log(Maxim Tests).csv"),
+        clean_log_path=Path("data_processing_gitignore/lookup_tables/data_collection_log.csv"),
         src_dir=Path("data_processing_gitignore/phone_drop_test_data/parsed"),
         output_dir=Path("data_processing_gitignore/phone_drop_test_data/framed"),
         ref_dir=Path("data_processing_gitignore/phone_drop_test_data/reference"),

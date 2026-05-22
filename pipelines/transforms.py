@@ -130,19 +130,26 @@ def convert_units(
 
     t = df["time_ns"].to_numpy(dtype=np.float64) / 1e9
 
-    accel = (
-        df[["accelX_g", "accelY_g", "accelZ_g","accelMag_g"]]
+    # Components only for vector math
+    accel_vec = (
+        df[["accelX_g", "accelY_g", "accelZ_g"]]
         .to_numpy(dtype=np.float32)
         * G
     )
 
-    gyro = (
-        df[["gyroX_dps", "gyroY_dps", "gyroZ_dps","gyroMag_dps"]]
+    gyro_vec = (
+        df[["gyroX_dps", "gyroY_dps", "gyroZ_dps"]]
         .to_numpy(dtype=np.float32)
         * DEG2RAD
     )
 
-    rot_acc = np.gradient(gyro, t, axis=0)
+    # Recompute magnitudes to be sure they are consistent with components
+    accel_mag = np.linalg.norm(accel_vec, axis=1)
+    gyro_mag = np.linalg.norm(gyro_vec, axis=1)
+
+    # Rotational acceleration: derivative of the angular velocity VECTOR
+    rot_acc_vec = np.gradient(gyro_vec, t, axis=0)
+    rot_acc_mag = np.linalg.norm(rot_acc_vec, axis=1)
 
     # Preserve columns that might have been added by previous transforms
     preserve = ["trigger", "axis", "triggered"]
@@ -151,27 +158,28 @@ def convert_units(
     df = pd.DataFrame({
         "Time (s)": t,
 
-        "LinAccX (m/s2)": accel[:, 0],
-        "LinAccY (m/s2)": accel[:, 1],
-        "LinAccZ (m/s2)": accel[:, 2],
-        "LinAccRes (m/s2)":accel[:, 3],
+        "LinAccX (m/s2)": accel_vec[:, 0],
+        "LinAccY (m/s2)": accel_vec[:, 1],
+        "LinAccZ (m/s2)": accel_vec[:, 2],
+        "LinAccRes (m/s2)": accel_mag,
 
-        "RotVelX (rad/s)": gyro[:, 0],
-        "RotVelY (rad/s)": gyro[:, 1],
-        "RotVelZ (rad/s)": gyro[:, 2],
-        "RotVelRes (rad/s)": gyro[:, 3],
+        "RotVelX (rad/s)": gyro_vec[:, 0],
+        "RotVelY (rad/s)": gyro_vec[:, 1],
+        "RotVelZ (rad/s)": gyro_vec[:, 2],
+        "RotVelRes (rad/s)": gyro_mag,
 
-        "RotAccX (rad/s2)": rot_acc[:, 0],
-        "RotAccY (rad/s2)": rot_acc[:, 1],
-        "RotAccZ (rad/s2)": rot_acc[:, 2],
-        "RotAccRes (rad/s2)": rot_acc[:, 3],
+        "RotAccX (rad/s2)": rot_acc_vec[:, 0],
+        "RotAccY (rad/s2)": rot_acc_vec[:, 1],
+        "RotAccZ (rad/s2)": rot_acc_vec[:, 2],
+        "RotAccRes (rad/s2)": rot_acc_mag,
         
         **extra_cols
     })
 
-    context["accel"] = accel
-    context["gyro"] = gyro
-    context["rot_acc"] = rot_acc
+    # Store 3D vectors in context for any subsequent transforms (like recompute_magnitudes)
+    context["accel"] = accel_vec
+    context["gyro"] = gyro_vec
+    context["rot_acc"] = rot_acc_vec
 
     return df, context
 
@@ -180,13 +188,16 @@ def recompute_magnitudes(
     context: Context,
 ) -> tuple[pd.DataFrame, Context]:
 
-    accel = context.get("accel")
-    gyro = context.get("gyro")
-    rot_acc = context.get("rot_acc")
+    accel = context.get("accel") # Should be (N, 3) now
+    gyro = context.get("gyro")   # Should be (N, 3) now
+    rot_acc = context.get("rot_acc") # Should be (N, 3) now
 
-    df["LinAccRes (m/s2)"] = np.linalg.norm(accel, axis=1)
-    df["RotVelRes (rad/s)"] = np.linalg.norm(gyro, axis=1)
-    df["RotAccRes (rad/s2)"] = np.linalg.norm(rot_acc, axis=1)
+    if accel is not None:
+        df["LinAccRes (m/s2)"] = np.linalg.norm(accel, axis=1)
+    if gyro is not None:
+        df["RotVelRes (rad/s)"] = np.linalg.norm(gyro, axis=1)
+    if rot_acc is not None:
+        df["RotAccRes (rad/s2)"] = np.linalg.norm(rot_acc, axis=1)
 
     return df, context
 
@@ -213,7 +224,7 @@ def compute_lag(df: pd.DataFrame, context: Context):
     context["lag_idx"] = int(lags[np.argmax(corr)])
     return df, context
 
-def align_to_reference(
+def align_to_reference_deprecated(
     df: pd.DataFrame,
     context: Context,
 ) -> tuple[pd.DataFrame, Context]:
@@ -237,6 +248,41 @@ def align_to_reference(
     df["Time (s)"] = df["Time (s)"] + offset
 
     return df, context
+
+def align_to_reference(
+    df: pd.DataFrame,
+    context: Context,
+) -> tuple[pd.DataFrame, Context]:
+
+    lag = int(context.get("lag_idx", 0))
+    ref_df = context["ref_df"]
+
+    if lag >= 0:
+        start_df = lag
+        start_ref = 0
+    else:
+        start_df = 0
+        start_ref = -lag
+
+    overlap = min(
+        len(df) - start_df,
+        len(ref_df) - start_ref,
+    )
+
+    if overlap <= 0:
+        raise ValueError("No overlap between signals")
+
+    df_aligned = df.iloc[start_df:start_df + overlap].copy()
+
+    t_df = df_aligned["Time (s)"].iloc[0]
+    t_ref = ref_df["Time (s)"].iloc[start_ref]
+
+    offset = t_ref - t_df
+    df_aligned["Time (s)"] += offset
+
+    context["offset"] = offset
+
+    return df_aligned, context
 
 def trim_stationary(
     df: pd.DataFrame,
@@ -286,10 +332,25 @@ def drop_empty_rows(df: pd.DataFrame, ctx: Context):
 
 
 def normalize_column_names(df: pd.DataFrame, ctx: Context):
+    # Conservative cleaning: strip and remove only truly problematic chars
+    # Keeps spaces, parens, and slashes for unit consistency
     df.columns = (
         df.columns
         .str.strip()
-        .str.replace(r"[^a-zA-Z0-9 ()/]", "", regex=True)
+        .str.replace(r"[^a-zA-Z0-9 ()//_]", "", regex=True)
+    )
+    return df, ctx
+
+
+def normalize_log_columns(df: pd.DataFrame, ctx: Context):
+    # Aggressive cleaning for logbooks: convert to snake_case
+    df.columns = (
+        df.columns
+        .str.strip()
+        .str.replace(r"[\s/-]+", "_", regex=True)
+        .str.replace(r"[^a-zA-Z0-9_]", "", regex=True)
+        .str.replace(r"__+", "_", regex=True)
+        .str.strip("_")
     )
     return df, ctx
 

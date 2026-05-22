@@ -27,7 +27,7 @@ PHONE_DROP_SAMPLE_CHOICES = {f.stem: str(f) for f in PHONE_DROP_DIR.glob("*.parq
 PHONE_REF_SAMPLE_CHOICES = {f.stem: str(f) for f in PHONE_REF_DIR.glob("*.parquet")}
 
 # 4. Lookup Tables (from webapp_data/lookup_tables_parquet) ----------------
-LOG_PATH = BASE_DIR / "lookup_tables_parquet"/ "Data Collection Log.parquet"
+LOG_PATH = BASE_DIR / "lookup_tables_parquet"/ "data_collection_log.parquet"
 PHONE_CHARACTERISTICS = BASE_DIR / "lookup_tables_parquet" / "phone_characteristics_aggregated.parquet"
 
 # 5. Phyphox data ---------------

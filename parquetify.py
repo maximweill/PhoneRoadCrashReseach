@@ -77,7 +77,7 @@ if __name__ == "__main__":
     convert_csv_dir_to_parquet(
         source_dir=DATA_DIR / "lookup_tables",
         output_dir=LOGS_DEST,
-        rename_map={"Data Collection Log(Maxim Tests).csv": "Data Collection Log.parquet"}
+        rename_map={"data_collection_log(Maxim Tests).csv": "data_collection_log.parquet"}
     )
     
     # Aggregated characteristics

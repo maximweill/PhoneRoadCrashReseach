@@ -1,0 +1,26 @@
+from my_app.pages.home import home_page
+from my_app.pages.phone_drop_test import (
+    phone_drop_test_page,
+    register_phone_drop_test_server,
+)
+from my_app.pages.sensor_abilities import (
+    register_sensor_abilities_server,
+    sensor_abilities_page,
+)
+from my_app.pages.sensor_correlation import sensor_correlation_page
+from my_app.pages.tested_phone_characteristics import (
+    register_tested_phone_characteristics_server,
+    tested_phone_characteristics_page,
+)
+
+
+__all__ = [
+    "home_page",
+    "phone_drop_test_page",
+    "register_phone_drop_test_server",
+    "register_sensor_abilities_server",
+    "sensor_abilities_page",
+    "sensor_correlation_page",
+    "register_tested_phone_characteristics_server",
+    "tested_phone_characteristics_page",
+]
