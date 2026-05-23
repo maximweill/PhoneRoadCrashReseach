@@ -69,10 +69,10 @@ def run_directory(
     print(f"--------{src_dir}-------")
     contexts: list[Context] = []
 
-    files = src_dir.glob(extension)
+    files = list(src_dir.glob(extension))
 
     for i, file in enumerate(files):
-        print(f"{i}: Processing {file.name}")
+        print(f"{i}/{len(files)}: Processing {file.name}")
 
         ctx: Context = {
             "output_dir": output_dir,

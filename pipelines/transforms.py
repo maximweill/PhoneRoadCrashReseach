@@ -61,7 +61,7 @@ def sort_by_time(
     return df, context
 
 
-def deduplicate(
+def deduplicate_DEPRECATED(
     df: pd.DataFrame,
     context: Context,
     threshold_ns: int = 500_000,
@@ -123,6 +123,53 @@ def deduplicate(
 
     return df, context
 
+def accelerometer_based_timestamps(
+    df: pd.DataFrame,
+    context: Context,
+) -> tuple[pd.DataFrame, Context]:
+
+    sensor_cols = [
+        "accelX_g",
+        "accelY_g",
+        "accelZ_g",
+    ]
+
+    vals = df[sensor_cols].to_numpy(dtype=np.float32)
+
+    keep = np.ones(len(df), dtype=bool)
+
+    # compare each sample with previous sample
+    same_as_prev = np.all(vals[1:] == vals[:-1], axis=1)
+
+    keep[1:] = ~same_as_prev
+
+    removed = int(np.sum(~keep))
+
+    df = df.loc[keep].reset_index(drop=True)
+
+    context["acc_removed_rows"] = removed
+    context["acc_initial_rows"] = len(keep)
+    context["acc_final_rows"] = len(df)
+
+    return df, context
+
+def deduplicate(
+    df: pd.DataFrame,
+    context: Context,
+) -> tuple[pd.DataFrame, Context]:
+
+    keep = ~df["time_ns"].duplicated(keep="first")
+
+    removed = int((~keep).sum())
+
+    df = df.loc[keep].reset_index(drop=True)
+    
+    context["dedup_removed_rows"] = removed
+    context["dedup_initial_rows"] = len(keep)
+    context["dedup_final_rows"] = len(df)
+
+    return df, context
+
 def convert_units(
     df: pd.DataFrame,
     context: Context,
@@ -152,7 +199,7 @@ def convert_units(
     rot_acc_mag = np.linalg.norm(rot_acc_vec, axis=1)
 
     # Preserve columns that might have been added by previous transforms
-    preserve = ["trigger", "axis", "triggered"]
+    preserve = ["trigger", "axis", "triggered","batt_temp_c"]
     extra_cols = {c: df[c].to_numpy() for c in preserve if c in df.columns}
 
     df = pd.DataFrame({
@@ -176,41 +223,42 @@ def convert_units(
         **extra_cols
     })
 
-    # Store 3D vectors in context for any subsequent transforms (like recompute_magnitudes)
-    context["accel"] = accel_vec
-    context["gyro"] = gyro_vec
-    context["rot_acc"] = rot_acc_vec
-
     return df, context
 
-def recompute_magnitudes(
-    df: pd.DataFrame,
-    context: Context,
-) -> tuple[pd.DataFrame, Context]:
-
-    accel = context.get("accel") # Should be (N, 3) now
-    gyro = context.get("gyro")   # Should be (N, 3) now
-    rot_acc = context.get("rot_acc") # Should be (N, 3) now
-
-    if accel is not None:
-        df["LinAccRes (m/s2)"] = np.linalg.norm(accel, axis=1)
-    if gyro is not None:
-        df["RotVelRes (rad/s)"] = np.linalg.norm(gyro, axis=1)
-    if rot_acc is not None:
-        df["RotAccRes (rad/s2)"] = np.linalg.norm(rot_acc, axis=1)
-
-    return df, context
 
 # =========================================================
 # FRAMING TRANSFORMS
 # =========================================================
 from scipy import signal
 
+def ref_timestamps_matching(df: pd.DataFrame, context: Context):
+    ref_time = context["ref_df"]["Time (s)"]
+
+    t_orig = df["Time (s)"]
+    t_new = ref_time.copy()
+
+    resampled_data = {"Time (s)": ref_time.copy()}
+
+    # Resample each sensor column
+    for col in df.columns:
+        if col == "Time (s)":
+            continue
+
+        # interp1d for linear interpolation
+        f = interp1d(t_orig, df[col].to_numpy(), kind='linear', fill_value="extrapolate")
+        resampled_data[col] = f(t_new)
+
+    df_new = pd.DataFrame(resampled_data)
+
+    context["len_ratio"] = len(df)/len(df_new)
+
+    return df_new, context
+
 def compute_lag(df: pd.DataFrame, context: Context):
     ref_df = context["ref_df"]
 
-    sig_col = context.get("signal_col", "LinAccRes (m/s2)")
-    ref_sig_col = context.get("ref_signal_col", "LinAccRes (m/s2)")
+    sig_col = context.get("signal_col", "RotVelX (rad/s)")
+    ref_sig_col = context.get("ref_signal_col", "RotVelX (rad/s)")
 
     sig_p = np.nan_to_num(df[sig_col].to_numpy())
     sig_r = np.nan_to_num(ref_df[ref_sig_col].to_numpy())
@@ -431,7 +479,7 @@ def clean_speed_column(df: pd.DataFrame, ctx: Context):
 def remove_accidental_triggers(
     df: pd.DataFrame, 
     ctx: Context,
-    min_interval_s: float = 120.0
+    min_interval_s: float = 150.0
 ) -> tuple[pd.DataFrame, Context]:
     """
     Cleans the 'triggered' column to produce a stable 'trigger' column.
@@ -442,6 +490,7 @@ def remove_accidental_triggers(
     ...
     """
     if "triggered" not in df.columns:
+        ctx["error"] = "no triggered column"
         return df, ctx
 
     # Find points where triggered increments
@@ -450,7 +499,7 @@ def remove_accidental_triggers(
     inc_indices = np.where(diff > 0)[0]
     
     if len(inc_indices) == 0:
-        # If no increments, everything is trigger 0
+        ctx["error"] = " no increments, everything is trigger 0"
         df["trigger"] = 0
         return df, ctx
 
@@ -460,17 +509,20 @@ def remove_accidental_triggers(
     
     # Filter accidental increments (if T_i - T_{i-1} < 120s)
     valid_inc_indices = []
-    last_valid_time = -np.inf
+    last_valid_time = times[0]-100 #not inf for the same of int()
+    trigger_durations = []
     
     for idx in inc_indices:
         current_time = times[idx]
-        if current_time - last_valid_time >= min_interval_s:
+        dt = current_time - last_valid_time
+
+        trigger_durations.append(int(dt))
+
+        if dt >= min_interval_s:
             valid_inc_indices.append(idx)
             last_valid_time = current_time
-            
-    # Re-map triggers. 
-    # Points before first valid increment are trigger 0.
-    # Points after first valid increment are trigger 1, etc.
+    ctx["trigger_durations"] = trigger_durations
+
     new_trigger = np.zeros(len(df), dtype=int)
     for i, start_idx in enumerate(valid_inc_indices, 1):
         new_trigger[start_idx:] = i
@@ -485,7 +537,7 @@ def remove_accidental_triggers(
 def extract_drops(
     df: pd.DataFrame, 
     ctx: Context,
-    window_s: float = 120.0
+    except_s: float = 120.0
 ) -> tuple[pd.DataFrame, Context]:
     """
     Extracts a window of data at the START of each trigger increment (T1+).
@@ -500,10 +552,10 @@ def extract_drops(
     trigger_levels = df.loc[change_mask, "trigger"].tolist()
     
     segments = []
-    for idx, level in zip(trigger_indices, trigger_levels):
+    for idx,next_idx, level in zip(trigger_indices,trigger_indices[1:], trigger_levels):
         # Window starts at increment and goes for window_s
         t_start = df.loc[idx, "Time (s)"]
-        t_end = t_start + window_s
+        t_end = max(df.loc[next_idx, "Time (s)"] - except_s)
         
         seg = df[(df["Time (s)"] >= t_start) & (df["Time (s)"] < t_end)].copy()
         seg["trigger"] = level
@@ -540,8 +592,7 @@ def extract_calibration(
     # Process each trigger level segment
     for level in sorted(df["trigger"].unique()):
         seg_df = df[df["trigger"] == level]
-        if len(seg_df) < 100: continue
-        
+
         seg_stat = stationary.loc[seg_df.index].to_numpy()
         
         # Find blocks in this segment, searching from the end (backwards)
@@ -577,10 +628,10 @@ def extract_calibration(
                 found_axes[axis_name] = block_df
                 
                 calibration_stats.append({
-                    "trigger": level,
+                    "trigger": int(level),
                     "axis": axis_name,
-                    "max_gyro_rads": max_gyro,
-                    "duration_s": duration_s
+                    "max_gyro_rads": int(max_gyro),
+                    "duration_s": int(duration_s)
                 })
                 
             if len(found_axes) == 6:
@@ -630,7 +681,20 @@ def compute_sampling_rate_stats(df: pd.DataFrame, ctx: Context) -> tuple[pd.Data
 
 def compute_battery_stats(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
     if "batt_temp_c" in df.columns:
-        ctx["mean_batt_temp_c"] = df["batt_temp_c"].mean()
+        temps = df["batt_temp_c"].dropna()
+        if not temps.empty:
+            ctx["battery_temp_c_mean"] = temps.mean()
+            ctx["battery_temp_c_median"] = temps.median()
+            q75, q25 = np.percentile(temps, [75, 25])
+            ctx["battery_temp_c_iqr"] = q75 - q25
+        else:
+            ctx["battery_temp_c_mean"] = np.nan
+            ctx["battery_temp_c_median"] = np.nan
+            ctx["battery_temp_c_iqr"] = np.nan
+    else:
+        ctx["battery_temp_c_mean"] = np.nan
+        ctx["battery_temp_c_median"] = np.nan
+        ctx["battery_temp_c_iqr"] = np.nan
     return df, ctx
 
 def compute_magnetic_stats(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
@@ -662,7 +726,7 @@ def create_characteristics_summary(df: pd.DataFrame, ctx: Context) -> tuple[pd.D
     # Define standard metrics we want to keep
     characteristics_keys = [
         "phone_id", "fs_mean", "fs_median", "fs_iqr", 
-        "mean_batt_temp_c", "initial_magX_uT", "initial_magY_uT", "initial_magZ_uT"
+        "battery_temp_c_mean", "battery_temp_c_median", "battery_temp_c_iqr", "initial_magX_uT", "initial_magY_uT", "initial_magZ_uT"
     ]
     
     # Create the row and also clean the context so run_directory produces a clean log
@@ -694,7 +758,6 @@ def create_characteristics_summary(df: pd.DataFrame, ctx: Context) -> tuple[pd.D
     return summary_df, ctx
 
 def aggregate_characteristics_by_phone(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
-    ###NOTE JUST COPY PASTE AGGREGATED INTO CTX
     """
     Groups the collected characteristics by Phone ID and applies aggregation rules.
     """
@@ -704,8 +767,8 @@ def aggregate_characteristics_by_phone(df: pd.DataFrame, ctx: Context) -> tuple[
         print("NO PHONE ID in individual char")
         return df, ctx
         
-    # Standard metrics we want to average
-    avg_metrics = ["fs_mean", "fs_median", "fs_iqr", "mean_batt_temp_c", 
+    avg_metrics = ["fs_mean", "fs_median", "fs_iqr", 
+                   "battery_temp_c_mean", "battery_temp_c_median", "battery_temp_c_iqr",
                    "initial_magX_uT", "initial_magY_uT", "initial_magZ_uT"]
     
     # Metadata columns we want to mode
@@ -763,7 +826,7 @@ def resample_reference(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Co
         print(f"Warning: No characteristics found for {phone_id} in {chars_path}")
         return df, ctx
 
-    fs = phone_info["fs_mean"].iloc[0]
+    fs = phone_info["fs_median"].iloc[0]
     dt_new = 1.0 / fs
 
     # Linear interpolation resampling

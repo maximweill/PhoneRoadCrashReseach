@@ -39,5 +39,5 @@ def _compute_allan_variance(data: np.ndarray, dt: float) -> tuple[np.ndarray, np
 
 def naming_convention(phone_id:str,config:str,target_speed_mps:str,repeat:str,is_reference = False):
     if is_reference:
-        return f"{target_speed_mps}mps_{config}_REPEAT{repeat}_Headform_Transformed_{phone_id}_REF"
+        return f"{target_speed_mps}mps_{config}_REPEAT{repeat}_Headform_Transformed_{phone_id}"
     return f"{target_speed_mps}mps_{config}_REPEAT{repeat}_{phone_id}"

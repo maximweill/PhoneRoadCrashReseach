@@ -13,8 +13,8 @@ PHONE_FRAMED_DIR = DROP_TEST_DIR / "phone_framed"
 REFERENCE_DIR = DROP_TEST_DIR / "phone_reference_signals"
 
 TIME_COLUMN = "Time (s)"
-SUMMARY_PLOT_HEIGHT = "720px"
-COMPONENT_PLOT_HEIGHT = "680px"
+SUMMARY_PLOT_HEIGHT = "100%"
+COMPONENT_PLOT_HEIGHT = "100%"
 
 
 def _read_log() -> pd.DataFrame:
@@ -50,8 +50,8 @@ def _default_choice(choices: list[str], preferred: str) -> str | None:
 
 def _speed_choices() -> list[str]:
     if DATA_COLLECTION_LOG.empty:
-        return []
-    return _sort_numeric_strings(DATA_COLLECTION_LOG["target_speed_mps"])
+        return ["All"]
+    return ["All"] + _sort_numeric_strings(DATA_COLLECTION_LOG["target_speed_mps"])
 
 
 def _config_choices() -> list[str]:
@@ -62,8 +62,8 @@ def _config_choices() -> list[str]:
 
 def _repeat_choices() -> list[str]:
     if DATA_COLLECTION_LOG.empty:
-        return []
-    return _sort_numeric_strings(DATA_COLLECTION_LOG["repeat"])
+        return ["All"]
+    return ["All"] + _sort_numeric_strings(DATA_COLLECTION_LOG["repeat"])
 
 
 def _phone_choices() -> list[str]:
@@ -120,19 +120,19 @@ def phone_drop_test_page():
                 ui.card_header("Accelerometer Comparison (m/s2)"),
                 output_widget("drop_accel_plot", height=SUMMARY_PLOT_HEIGHT),
                 full_screen=True,
-                fill=False,
+                fill=True,
             ),
             ui.card(
                 ui.card_header("Gyroscope Comparison (rad/s)"),
                 output_widget("drop_gyro_plot", height=SUMMARY_PLOT_HEIGHT),
                 full_screen=True,
-                fill=False,
+                fill=True,
             ),
             ui.card(
                 ui.card_header("Rotational Acceleration (rad/s2)"),
                 output_widget("drop_rot_accel_res_plot", height=SUMMARY_PLOT_HEIGHT),
                 full_screen=True,
-                fill=False,
+                fill=True,
             ),
             fill=False,
         ),
@@ -186,14 +186,23 @@ def _matching_rows(speed: str, config: str, repeat: str, phone: str) -> pd.DataF
     if df.empty:
         return df
 
-    df = df[
-        (df["target_speed_mps"] == str(speed))
-        & (df["config"] == config)
-        & (df["repeat"] == str(repeat))
-    ]
+    mask = df["config"] == config
+    if speed != "All":
+        mask &= df["target_speed_mps"] == str(speed)
+    if repeat != "All":
+        mask &= df["repeat"] == str(repeat)
     if phone != "All":
-        df = df[df["phone_id"] == phone]
-    return df.sort_values("phone_id")
+        mask &= df["phone_id"] == phone
+
+    def _sort_key(col):
+        if col.name in ["target_speed_mps", "repeat"]:
+            return pd.to_numeric(col, errors="coerce")
+        return col
+
+    return df[mask].sort_values(
+        ["target_speed_mps", "repeat", "phone_id"],
+        key=_sort_key,
+    )
 
 
 def _phone_sample_path(speed: str, config: str, repeat: str, phone_id: str) -> Path:
@@ -203,7 +212,7 @@ def _phone_sample_path(speed: str, config: str, repeat: str, phone_id: str) -> P
 def _reference_sample_path(speed: str, config: str, repeat: str, phone_id: str) -> Path:
     return (
         REFERENCE_DIR
-        / f"{speed}mps_{config}_REPEAT{repeat}_Headform_Transformed_{phone_id}_REF.parquet"
+        / f"{speed}mps_{config}_REPEAT{repeat}_Headform_Transformed_{phone_id}.parquet"
     )
 
 
@@ -265,11 +274,13 @@ def register_phone_drop_test_server(input, output, session):
 
         speed = input.drop_speed()
         config = input.drop_config()
-        matching = df[
-            (df["target_speed_mps"] == str(speed))
-            & (df["config"] == config)
-        ]
-        repeats = _sort_numeric_strings(matching["repeat"])
+
+        mask = df["config"] == config
+        if speed != "All":
+            mask &= df["target_speed_mps"] == str(speed)
+
+        matching = df[mask]
+        repeats = ["All"] + _sort_numeric_strings(matching["repeat"])
         current = input.drop_repeat()
         ui.update_select(
             "drop_repeat",
@@ -283,11 +294,17 @@ def register_phone_drop_test_server(input, output, session):
         if df.empty:
             return
 
-        matching = df[
-            (df["target_speed_mps"] == str(input.drop_speed()))
-            & (df["config"] == input.drop_config())
-            & (df["repeat"] == str(input.drop_repeat()))
-        ]
+        speed = input.drop_speed()
+        config = input.drop_config()
+        repeat = input.drop_repeat()
+
+        mask = df["config"] == config
+        if speed != "All":
+            mask &= df["target_speed_mps"] == str(speed)
+        if repeat != "All":
+            mask &= df["repeat"] == str(repeat)
+
+        matching = df[mask]
         phones = ["All"] + _sorted_strings(matching["phone_id"])
         current = input.drop_phone()
         ui.update_select(

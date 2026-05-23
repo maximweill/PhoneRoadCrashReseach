@@ -16,9 +16,9 @@ OLD_PHONE_PIPELINE = Pipeline(
         normalize_time_column,
         ensure_sensor_columns,
         sort_by_time,
+        accelerometer_based_timestamps,
         deduplicate,
         convert_units,
-        recompute_magnitudes,
     ],
     saver=save_single_csv,
 )
@@ -48,22 +48,36 @@ CONTINUOUS_PHONE_PIPELINE = Pipeline(
     saver=save_split_by_trigger,
 )
 
-
+FRAMED_RESAMPLING_PIPELINE = Pipeline(
+    name="framed_resampling",
+    loader=load_phone_drop_with_ref,
+    transforms=[
+        normalize_column_names,
+        ref_timestamps_matching,
+    ],
+    saver=save_output_path_ctx,
+)
 
 PHONE_DROP_FRAMING_PIPELINE = Pipeline(
     name="phone_drop",
     loader=load_phone_drop_with_ref,
     transforms=[
+        normalize_column_names,
         compute_lag,
         align_to_reference,
     ],
-    saver=save_framed,
+    saver=save_output_path_ctx,
 )
 
-STATIONARY_FRAMING_PIPELINE = Pipeline(
+STATIONARY_PARSING_PIPELINE = Pipeline(
     name="stationary",
-    loader=load_stationary,
+    loader=load_csv,
     transforms=[
+        normalize_time_column,
+        ensure_sensor_columns,
+        sort_by_time,
+        convert_units,
+
         trim_stationary,
     ],
     saver=save_stationary,

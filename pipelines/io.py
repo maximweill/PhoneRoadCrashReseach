@@ -37,19 +37,21 @@ def load_phone_drop_with_ref(input_path: Path, context: dict) -> tuple[pd.DataFr
         context["skip"] = True
         context["skip_reason"] = "ref_doesnt_exist"
         return None, context
+    
+    if input_path.suffix == ".csv":
+        df = pd.read_csv(input_path)
+    elif  input_path.suffix == ".xlsx":
+        df = pd.read_excel(input_path)
+    else:
+        context["skip"] = True
+        context["skip_reason"] = f"input extension not recognised {input_path.suffix}"
+        return None, context
 
-    df = pd.read_csv(input_path)
     ref_df = pd.read_csv(ref_path)
 
     context["ref_df"] = ref_df
     context["ref_path"] = ref_path
 
-    return df, context
-
-def load_stationary(file: Path, context: Context):
-    df = pd.read_csv(file)
-
-    context["input_path"] = file
     return df, context
 
 # =========================================================
@@ -99,7 +101,7 @@ def save_split_by_trigger(df: pd.DataFrame, context: Context) -> list[Path]:
 # FRAMING SAVERS
 # =========================================================
 
-def save_framed(df: pd.DataFrame, context: Context) -> list[Path]:
+def save_output_path_ctx(df: pd.DataFrame, context: Context) -> list[Path]:
 
     output_path: Path = context["output_path"]
 
@@ -114,9 +116,6 @@ def save_reference(df: pd.DataFrame, context: Context) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     stem = context["input_path"].stem
-    if not stem.endswith("_REF"):
-        stem = f"{stem}_REF"
-
     out_path = output_dir / f"{stem}.csv"
 
     df.to_csv(out_path, index=False)

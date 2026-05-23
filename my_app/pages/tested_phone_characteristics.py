@@ -10,7 +10,7 @@ DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 PHONE_CHARACTERISTICS_PATH = (
     DATA_DIR / "lookup_tables_parquet" / "phone_characteristics_aggregated.parquet"
 )
-STATIONARY_FRAMED_DIR = DATA_DIR / "stationary_parquet" / "framed"
+STATIONARY_FRAMED_DIR = DATA_DIR / "stationary_parquet" / "parsed"
 STATIONARY_ALLAN_DIR = DATA_DIR / "stationary_parquet" / "allan_variance"
 
 TIME_COLUMN = "Time (s)"

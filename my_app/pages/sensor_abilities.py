@@ -12,8 +12,8 @@ from my_app.utils.sensor_abilities import (
 
 DEFAULT_MANUFACTURER = "Apple"
 DEFAULT_VARIABLE = "accelerometer_rate"
-PLOT_HEIGHT = "420px"
-HISTOGRAM_HEIGHT = "560px"
+PLOT_HEIGHT = "100%"
+HISTOGRAM_HEIGHT = "100%"
 
 
 def _default_choice(choices: list[str], preferred: str) -> str | None:
@@ -57,13 +57,13 @@ def sensor_abilities_page():
                 ui.card_header("Distribution"),
                 output_widget("sensor_distribution_plot", height=PLOT_HEIGHT),
                 full_screen=True,
-                fill=False,
+                fill=True,
             ),
             ui.card(
                 ui.card_header("Availability"),
                 output_widget("sensor_availability_plot", height=PLOT_HEIGHT),
                 full_screen=True,
-                fill=False,
+                fill=True,
             ),
             fill=False,
         ),
@@ -74,7 +74,7 @@ def sensor_abilities_page():
                     ui.card_header("Histogram"),
                     output_widget("sensor_histogram_plot", height=HISTOGRAM_HEIGHT),
                     full_screen=True,
-                    fill=False,
+                    fill=True,
                 ),
                 value="sensor_histogram",
             ),
