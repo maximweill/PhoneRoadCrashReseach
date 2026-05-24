@@ -10,8 +10,17 @@ DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 PHONE_CHARACTERISTICS_PATH = (
     DATA_DIR / "lookup_tables_parquet" / "phone_characteristics_aggregated.parquet"
 )
-STATIONARY_FRAMED_DIR = DATA_DIR / "stationary_parquet" / "parsed"
-STATIONARY_ALLAN_DIR = DATA_DIR / "stationary_parquet" / "allan_variance"
+START_CHARACTERISTICS_PATH = (
+    DATA_DIR / "lookup_tables_parquet" / "start_characteristics_stationary.parquet"
+)
+END_CHARACTERISTICS_PATH = (
+    DATA_DIR / "lookup_tables_parquet" / "end_characteristics_stationary.parquet"
+)
+STATIONARY_DIR = DATA_DIR / "stationary_parquet"
+STATIONARY_START_PARSED = STATIONARY_DIR / "start" / "parsed"
+STATIONARY_START_ALLAN = STATIONARY_DIR / "start" / "allan_variance"
+STATIONARY_END_PARSED = STATIONARY_DIR / "end" / "parsed"
+STATIONARY_END_ALLAN = STATIONARY_DIR / "end" / "allan_variance"
 
 TIME_COLUMN = "Time (s)"
 ACCEL_RES_COLUMN = "LinAccRes (m/s2)"
@@ -21,62 +30,31 @@ TRACE_PLOT_HEIGHT = "420px"
 ALLAN_PLOT_HEIGHT = "460px"
 
 
-def _stationary_sample_choices() -> dict[str, Path]:
-    if not STATIONARY_FRAMED_DIR.exists():
-        return {}
-
-    return {
-        file.stem: file
-        for file in STATIONARY_FRAMED_DIR.glob("*.parquet")
-        if file.is_file() and file.stat().st_size > 0
-    }
-
-
-def _stationary_allan_choices() -> dict[str, Path]:
-    if not STATIONARY_ALLAN_DIR.exists():
-        return {}
-
-    return {
-        file.name: file
-        for file in STATIONARY_ALLAN_DIR.glob("*.parquet")
-        if file.is_file() and file.stat().st_size > 0
-    }
+def _get_all_phones() -> list[str]:
+    phones = set()
+    for directory in [STATIONARY_START_PARSED, STATIONARY_END_PARSED]:
+        if directory.exists():
+            for file in directory.glob("*.parquet"):
+                # accel_stationary_20260511_001354_Phone004.parquet
+                # both_stationary_20260520_125700_Phone003.parquet
+                stem = file.stem
+                parts = stem.split("_")
+                if len(parts) >= 1:
+                    phone_id = parts[-1]
+                    if phone_id.startswith("Phone"):
+                        phones.add(phone_id)
+    return sorted(list(phones))
 
 
-def _get_stationary_phones() -> dict[str, dict[str, list[str]]]:
-    phones: dict[str, dict[str, list[str]]] = {}
-
-    for stem in _stationary_sample_choices():
-        parts = stem.split("_")
-        if len(parts) < 2:
-            continue
-
-        sensor = parts[0]
-        phone_id = parts[-1]
-        if sensor not in {"accel", "gyro"}:
-            continue
-
-        phones.setdefault(phone_id, {"accel": [], "gyro": []})
-        phones[phone_id][sensor].append(stem)
-
-    for phone in phones.values():
-        phone["accel"].sort()
-        phone["gyro"].sort()
-
-    return dict(sorted(phones.items()))
-
-
-STATIONARY_SAMPLE_CHOICES = _stationary_sample_choices()
-STATIONARY_ALLAN_CHOICES = _stationary_allan_choices()
-STATIONARY_PHONES = _get_stationary_phones()
+STATIONARY_PHONES = _get_all_phones()
 
 
 def _default_stationary_phone() -> str | None:
-    return next(iter(STATIONARY_PHONES), None)
+    return STATIONARY_PHONES[0] if STATIONARY_PHONES else None
 
 
 def tested_phone_characteristics_page():
-    phone_choices = list(STATIONARY_PHONES) or ["None"]
+    phone_choices = STATIONARY_PHONES or ["None"]
 
     return ui.nav_panel(
         "Tested Phone Characteristics",
@@ -85,6 +63,23 @@ def tested_phone_characteristics_page():
             ui.output_data_frame("phone_characteristics_table"),
             full_screen=True,
             min_height=TABLE_CARD_MIN_HEIGHT,
+            fill=False,
+        ),
+        ui.layout_columns(
+            ui.card(
+                ui.card_header("Start of Test Characteristics"),
+                ui.output_data_frame("start_characteristics_table"),
+                full_screen=True,
+                min_height=TABLE_CARD_MIN_HEIGHT,
+                fill=False,
+            ),
+            ui.card(
+                ui.card_header("End of Test Characteristics"),
+                ui.output_data_frame("end_characteristics_table"),
+                full_screen=True,
+                min_height=TABLE_CARD_MIN_HEIGHT,
+                fill=False,
+            ),
             fill=False,
         ),
         ui.layout_columns(
@@ -105,149 +100,167 @@ def tested_phone_characteristics_page():
             ),
             fill=False,
         ),
+        ui.layout_columns(
+            ui.card(
+                ui.card_header("Accelerometer Allan Deviation"),
+                output_widget(
+                    "stationary_accel_allan_plot",
+                    height=ALLAN_PLOT_HEIGHT,
+                ),
+                full_screen=True,
+                fill=False,
+            ),
+            ui.card(
+                ui.card_header("Gyroscope Allan Deviation"),
+                output_widget(
+                    "stationary_gyro_allan_plot",
+                    height=ALLAN_PLOT_HEIGHT,
+                ),
+                full_screen=True,
+                fill=False,
+            ),
+            fill=False,
+        ),
         ui.accordion(
             ui.accordion_panel(
-                "Stationary Accelerometer Components",
+                "Accelerometer - Start of Test",
                 ui.layout_columns(
                     ui.card(
-                        ui.card_header("Stationary Accelerometer X (m/s2)"),
-                        output_widget(
-                            "stationary_accel_x_plot",
-                            height=TRACE_PLOT_HEIGHT,
-                        ),
+                        ui.card_header("Accel X (m/s2)"),
+                        output_widget("accel_start_x_plot", height=TRACE_PLOT_HEIGHT),
                         full_screen=True,
-                        fill=False,
                     ),
                     ui.card(
-                        ui.card_header("Stationary Accelerometer Y (m/s2)"),
-                        output_widget(
-                            "stationary_accel_y_plot",
-                            height=TRACE_PLOT_HEIGHT,
-                        ),
+                        ui.card_header("Accel Y (m/s2)"),
+                        output_widget("accel_start_y_plot", height=TRACE_PLOT_HEIGHT),
                         full_screen=True,
-                        fill=False,
                     ),
                     ui.card(
-                        ui.card_header("Stationary Accelerometer Z (m/s2)"),
-                        output_widget(
-                            "stationary_accel_z_plot",
-                            height=TRACE_PLOT_HEIGHT,
-                        ),
+                        ui.card_header("Accel Z (m/s2)"),
+                        output_widget("accel_start_z_plot", height=TRACE_PLOT_HEIGHT),
                         full_screen=True,
-                        fill=False,
                     ),
-                    fill=False,
                 ),
-                value="stationary_accelerometer",
+                value="accel_start",
             ),
             ui.accordion_panel(
-                "Stationary Gyroscope Components",
+                "Accelerometer - End of Test",
                 ui.layout_columns(
                     ui.card(
-                        ui.card_header("Stationary Gyroscope X (rad/s)"),
-                        output_widget(
-                            "stationary_gyro_x_plot",
-                            height=TRACE_PLOT_HEIGHT,
-                        ),
+                        ui.card_header("Accel X (m/s2)"),
+                        output_widget("accel_end_x_plot", height=TRACE_PLOT_HEIGHT),
                         full_screen=True,
-                        fill=False,
                     ),
                     ui.card(
-                        ui.card_header("Stationary Gyroscope Y (rad/s)"),
-                        output_widget(
-                            "stationary_gyro_y_plot",
-                            height=TRACE_PLOT_HEIGHT,
-                        ),
+                        ui.card_header("Accel Y (m/s2)"),
+                        output_widget("accel_end_y_plot", height=TRACE_PLOT_HEIGHT),
                         full_screen=True,
-                        fill=False,
                     ),
                     ui.card(
-                        ui.card_header("Stationary Gyroscope Z (rad/s)"),
-                        output_widget(
-                            "stationary_gyro_z_plot",
-                            height=TRACE_PLOT_HEIGHT,
-                        ),
+                        ui.card_header("Accel Z (m/s2)"),
+                        output_widget("accel_end_z_plot", height=TRACE_PLOT_HEIGHT),
                         full_screen=True,
-                        fill=False,
                     ),
-                    fill=False,
                 ),
-                value="stationary_gyroscope",
+                value="accel_end",
             ),
             ui.accordion_panel(
-                "Allan Deviation",
+                "Gyroscope - Start of Test",
                 ui.layout_columns(
                     ui.card(
-                        ui.card_header("Accelerometer Allan Deviation"),
-                        output_widget(
-                            "stationary_accel_allan_plot",
-                            height=ALLAN_PLOT_HEIGHT,
-                        ),
+                        ui.card_header("Gyro X (rad/s)"),
+                        output_widget("gyro_start_x_plot", height=TRACE_PLOT_HEIGHT),
                         full_screen=True,
-                        fill=False,
                     ),
                     ui.card(
-                        ui.card_header("Gyroscope Allan Deviation"),
-                        output_widget(
-                            "stationary_gyro_allan_plot",
-                            height=ALLAN_PLOT_HEIGHT,
-                        ),
+                        ui.card_header("Gyro Y (rad/s)"),
+                        output_widget("gyro_start_y_plot", height=TRACE_PLOT_HEIGHT),
                         full_screen=True,
-                        fill=False,
                     ),
-                    fill=False,
+                    ui.card(
+                        ui.card_header("Gyro Z (rad/s)"),
+                        output_widget("gyro_start_z_plot", height=TRACE_PLOT_HEIGHT),
+                        full_screen=True,
+                    ),
                 ),
-                value="allan_deviation",
+                value="gyro_start",
             ),
-            open="stationary_accelerometer",
+            ui.accordion_panel(
+                "Gyroscope - End of Test",
+                ui.layout_columns(
+                    ui.card(
+                        ui.card_header("Gyro X (rad/s)"),
+                        output_widget("gyro_end_x_plot", height=TRACE_PLOT_HEIGHT),
+                        full_screen=True,
+                    ),
+                    ui.card(
+                        ui.card_header("Gyro Y (rad/s)"),
+                        output_widget("gyro_end_y_plot", height=TRACE_PLOT_HEIGHT),
+                        full_screen=True,
+                    ),
+                    ui.card(
+                        ui.card_header("Gyro Z (rad/s)"),
+                        output_widget("gyro_end_z_plot", height=TRACE_PLOT_HEIGHT),
+                        full_screen=True,
+                    ),
+                ),
+                value="gyro_end",
+            ),
+            open="accel_start",
         ),
     )
 
 
-def _read_parquet(path: Path) -> pd.DataFrame:
-    if not path.exists():
-        return pd.DataFrame()
-    return pd.read_parquet(path)
-
-
-def _load_stationary_data(phone_id: str | None, sensor: str) -> pd.DataFrame:
-    if not phone_id:
+def _load_sensor_data(phone_id: str | None, sensor: str, phase: str) -> pd.DataFrame:
+    if not phone_id or phone_id == "None":
         return pd.DataFrame()
 
-    stems = STATIONARY_PHONES.get(phone_id, {}).get(sensor, [])
+    directory = STATIONARY_START_PARSED if phase == "start" else STATIONARY_END_PARSED
+    if not directory.exists():
+        return pd.DataFrame()
+
+    # In "end" phase, both sensors are in one file starting with "both"
+    pattern = f"{sensor}_stationary_*_{phone_id}.parquet"
+    if phase == "end":
+        pattern = f"both_stationary_*_{phone_id}.parquet"
+
+    files = list(directory.glob(pattern))
     frames = []
-
-    for stem in stems:
-        path = STATIONARY_SAMPLE_CHOICES.get(stem)
-        if path is None:
-            continue
-
-        frame = _read_parquet(path)
-        if not frame.empty:
-            frame = frame.copy()
-            frame["file"] = stem
-            frames.append(frame)
+    for f in files:
+        df = pd.read_parquet(f)
+        if not df.empty:
+            df["file"] = f.stem
+            df["phase"] = phase.capitalize()
+            frames.append(df)
 
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
 def _load_allan_data(phone_id: str | None, sensor: str) -> pd.DataFrame:
-    if not phone_id:
+    if not phone_id or phone_id == "None":
         return pd.DataFrame()
 
-    stems = STATIONARY_PHONES.get(phone_id, {}).get(sensor, [])
     frames = []
 
-    for stem in stems:
-        path = STATIONARY_ALLAN_CHOICES.get(f"{stem}_allan.parquet")
-        if path is None:
-            continue
+    # Start phase
+    if STATIONARY_START_ALLAN.exists():
+        pattern = f"{sensor}_stationary_*_{phone_id}_allan.parquet"
+        for f in STATIONARY_START_ALLAN.glob(pattern):
+            df = pd.read_parquet(f)
+            if not df.empty:
+                df["file"] = f.stem
+                df["phase"] = "Start"
+                frames.append(df)
 
-        frame = _read_parquet(path)
-        if not frame.empty:
-            frame = frame.copy()
-            frame["file"] = stem
-            frames.append(frame)
+    # End phase
+    if STATIONARY_END_ALLAN.exists():
+        pattern = f"both_stationary_*_{phone_id}_allan.parquet"
+        for f in STATIONARY_END_ALLAN.glob(pattern):
+            df = pd.read_parquet(f)
+            if not df.empty:
+                df["file"] = f.stem
+                df["phase"] = "End"
+                frames.append(df)
 
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
@@ -290,19 +303,22 @@ def _allan_plot(df: pd.DataFrame, component_prefix: str, title: str):
         return _empty_plot(f"No {title.lower()} columns")
 
     melted = df.melt(
-        id_vars=["tau_s", "file"],
+        id_vars=["tau_s", "file", "phase"],
         value_vars=sigma_columns,
         var_name="component",
         value_name="sigma",
     )
     melted["component"] = melted["component"].str.replace("_sigma", "", regex=False)
 
+    # Create a unique label for the legend
+    melted["legend_label"] = melted["phase"] + " - " + melted["component"]
+
     fig = px.line(
         melted,
         x="tau_s",
         y="sigma",
-        color="file",
-        line_dash="component",
+        color="legend_label",
+        line_dash="phase",
         title=title,
     )
     fig.update_xaxes(type="log")
@@ -321,12 +337,20 @@ def _allan_plot(df: pd.DataFrame, component_prefix: str, title: str):
 
 def register_tested_phone_characteristics_server(input, output, session):
     @reactive.calc
-    def selected_stationary_accel_data():
-        return _load_stationary_data(input.stationary_phone(), "accel")
+    def selected_accel_start_data():
+        return _load_sensor_data(input.stationary_phone(), "accel", "start")
 
     @reactive.calc
-    def selected_stationary_gyro_data():
-        return _load_stationary_data(input.stationary_phone(), "gyro")
+    def selected_accel_end_data():
+        return _load_sensor_data(input.stationary_phone(), "accel", "end")
+
+    @reactive.calc
+    def selected_gyro_start_data():
+        return _load_sensor_data(input.stationary_phone(), "gyro", "start")
+
+    @reactive.calc
+    def selected_gyro_end_data():
+        return _load_sensor_data(input.stationary_phone(), "gyro", "end")
 
     @reactive.calc
     def selected_allan_accel_data():
@@ -339,80 +363,48 @@ def register_tested_phone_characteristics_server(input, output, session):
     @output
     @render.data_frame
     def phone_characteristics_table():
-        return render.DataTable(_read_parquet(PHONE_CHARACTERISTICS_PATH))
+        path = PHONE_CHARACTERISTICS_PATH
+        if not path.exists():
+            return render.DataTable(pd.DataFrame())
+        return render.DataTable(pd.read_parquet(path))
+
+    @output
+    @render.data_frame
+    def start_characteristics_table():
+        path = START_CHARACTERISTICS_PATH
+        if not path.exists():
+            return render.DataTable(pd.DataFrame())
+        return render.DataTable(pd.read_parquet(path))
+
+    @output
+    @render.data_frame
+    def end_characteristics_table():
+        path = END_CHARACTERISTICS_PATH
+        if not path.exists():
+            return render.DataTable(pd.DataFrame())
+        return render.DataTable(pd.read_parquet(path))
 
     @output
     @render.text
     def stationary_stats():
-        accel_data = selected_stationary_accel_data()
-        gyro_data = selected_stationary_gyro_data()
+        acc_s = selected_accel_start_data()
+        acc_e = selected_accel_end_data()
+        gyr_s = selected_gyro_start_data()
+        gyr_e = selected_gyro_end_data()
 
         stats = []
-        if not accel_data.empty and ACCEL_RES_COLUMN in accel_data.columns:
-            stats.append(
-                f"Accel Noise (RMS): {accel_data[ACCEL_RES_COLUMN].std():.4f} m/s2"
-            )
-        if not gyro_data.empty and GYRO_RES_COLUMN in gyro_data.columns:
-            stats.append(
-                f"Gyro Noise (RMS): {gyro_data[GYRO_RES_COLUMN].std():.4f} rad/s"
-            )
+        if not acc_s.empty and ACCEL_RES_COLUMN in acc_s.columns:
+            stats.append(f"Accel Start RMS: {acc_s[ACCEL_RES_COLUMN].std():.4f} m/s2")
+        if not acc_e.empty and ACCEL_RES_COLUMN in acc_e.columns:
+            stats.append(f"Accel End RMS: {acc_e[ACCEL_RES_COLUMN].std():.4f} m/s2")
+        if not gyr_s.empty and GYRO_RES_COLUMN in gyr_s.columns:
+            stats.append(f"Gyro Start RMS: {gyr_s[GYRO_RES_COLUMN].std():.4f} rad/s")
+        if not gyr_e.empty and GYRO_RES_COLUMN in gyr_e.columns:
+            stats.append(f"Gyro End RMS: {gyr_e[GYRO_RES_COLUMN].std():.4f} rad/s")
 
         return " | ".join(stats) if stats else "No data selected."
 
-    @output
-    @render_plotly
-    def stationary_accel_x_plot():
-        return _stationary_line_plot(
-            selected_stationary_accel_data(),
-            "LinAccX (m/s2)",
-            "Accel X Noise",
-        )
-
-    @output
-    @render_plotly
-    def stationary_accel_y_plot():
-        return _stationary_line_plot(
-            selected_stationary_accel_data(),
-            "LinAccY (m/s2)",
-            "Accel Y Noise",
-        )
-
-    @output
-    @render_plotly
-    def stationary_accel_z_plot():
-        return _stationary_line_plot(
-            selected_stationary_accel_data(),
-            "LinAccZ (m/s2)",
-            "Accel Z Noise",
-        )
-
-    @output
-    @render_plotly
-    def stationary_gyro_x_plot():
-        return _stationary_line_plot(
-            selected_stationary_gyro_data(),
-            "RotVelX (rad/s)",
-            "Gyro X Noise",
-        )
-
-    @output
-    @render_plotly
-    def stationary_gyro_y_plot():
-        return _stationary_line_plot(
-            selected_stationary_gyro_data(),
-            "RotVelY (rad/s)",
-            "Gyro Y Noise",
-        )
-
-    @output
-    @render_plotly
-    def stationary_gyro_z_plot():
-        return _stationary_line_plot(
-            selected_stationary_gyro_data(),
-            "RotVelZ (rad/s)",
-            "Gyro Z Noise",
-        )
-
+    # Allan Plots
     @output
     @render_plotly
     def stationary_accel_allan_plot():
@@ -429,4 +421,92 @@ def register_tested_phone_characteristics_server(input, output, session):
             selected_allan_gyro_data(),
             "RotVel",
             "Gyro Allan Deviation",
+        )
+
+    # Accel Start Plots
+    @output
+    @render_plotly
+    def accel_start_x_plot():
+        return _stationary_line_plot(
+            selected_accel_start_data(), "LinAccX (m/s2)", "Accel X - Start"
+        )
+
+    @output
+    @render_plotly
+    def accel_start_y_plot():
+        return _stationary_line_plot(
+            selected_accel_start_data(), "LinAccY (m/s2)", "Accel Y - Start"
+        )
+
+    @output
+    @render_plotly
+    def accel_start_z_plot():
+        return _stationary_line_plot(
+            selected_accel_start_data(), "LinAccZ (m/s2)", "Accel Z - Start"
+        )
+
+    # Accel End Plots
+    @output
+    @render_plotly
+    def accel_end_x_plot():
+        return _stationary_line_plot(
+            selected_accel_end_data(), "LinAccX (m/s2)", "Accel X - End"
+        )
+
+    @output
+    @render_plotly
+    def accel_end_y_plot():
+        return _stationary_line_plot(
+            selected_accel_end_data(), "LinAccY (m/s2)", "Accel Y - End"
+        )
+
+    @output
+    @render_plotly
+    def accel_end_z_plot():
+        return _stationary_line_plot(
+            selected_accel_end_data(), "LinAccZ (m/s2)", "Accel Z - End"
+        )
+
+    # Gyro Start Plots
+    @output
+    @render_plotly
+    def gyro_start_x_plot():
+        return _stationary_line_plot(
+            selected_gyro_start_data(), "RotVelX (rad/s)", "Gyro X - Start"
+        )
+
+    @output
+    @render_plotly
+    def gyro_start_y_plot():
+        return _stationary_line_plot(
+            selected_gyro_start_data(), "RotVelY (rad/s)", "Gyro Y - Start"
+        )
+
+    @output
+    @render_plotly
+    def gyro_start_z_plot():
+        return _stationary_line_plot(
+            selected_gyro_start_data(), "RotVelZ (rad/s)", "Gyro Z - Start"
+        )
+
+    # Gyro End Plots
+    @output
+    @render_plotly
+    def gyro_end_x_plot():
+        return _stationary_line_plot(
+            selected_gyro_end_data(), "RotVelX (rad/s)", "Gyro X - End"
+        )
+
+    @output
+    @render_plotly
+    def gyro_end_y_plot():
+        return _stationary_line_plot(
+            selected_gyro_end_data(), "RotVelY (rad/s)", "Gyro Y - End"
+        )
+
+    @output
+    @render_plotly
+    def gyro_end_z_plot():
+        return _stationary_line_plot(
+            selected_gyro_end_data(), "RotVelZ (rad/s)", "Gyro Z - End"
         )

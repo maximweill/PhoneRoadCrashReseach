@@ -123,17 +123,20 @@ def save_reference(df: pd.DataFrame, context: Context) -> list[Path]:
     context["output"] = out_path
     return [out_path]
 
-def save_stationary(df: pd.DataFrame, context: Context) -> list[Path]:
+def save_stationary(df: pd.DataFrame, context: Context, both = False) -> list[Path]:
 
     file: Path = context["input_path"]
     output_dir: Path = context["output_dir"]
 
     output_dir.mkdir(parents=True, exist_ok=True)
-
     parts = file.stem.split("_")
-    sensor, _, date, time, phone_id = parts[:5]
 
-    out_name = f"{sensor}_stationary_{date}_{time}_{phone_id}.csv"
+    if not both:
+        sensor, _, date, time, phone_id = parts[:5]
+        out_name = f"{sensor}_stationary_{date}_{time}_{phone_id}.csv"
+    else:
+        _, date, time, phone_id = parts[:4]
+        out_name = f"both_stationary_{date}_{time}_{phone_id}.csv"
     out_path = output_dir / out_name
 
     df.to_csv(out_path, index=False)

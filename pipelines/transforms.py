@@ -60,6 +60,41 @@ def sort_by_time(
 
     return df, context
 
+def interpolate_outliers(
+    df: pd.DataFrame,
+    context: Context,
+) -> tuple[pd.DataFrame, Context]:
+    # 1. Work on a copy to protect the original dataset
+    df_clean = df.copy()
+    sensor_cols = [col for col in df_clean.columns if "Acc" in col or "Rot" in col]
+
+    # 3. Define your threshold multiplier
+    # For MAD, a multiplier between 3 and 5 is standard practice
+    threshold_multiplier = 7.4 # ~5sigma 
+
+    for col in sensor_cols:
+        # Calculate global median
+        median = df_clean[col].median()
+
+        # Calculate global Median Absolute Deviation (MAD)
+        mad = (df_clean[col] - median).abs().median()
+
+        # 4. Find deviations that exceed (multiplier * MAD)
+        is_outlier = (df_clean[col] - median).abs() > (
+            threshold_multiplier * mad
+        )
+        context[f"{col}_MAD"] = mad
+        context[f"{col}_median"] = median
+        context[f"{col}_n_outliers"] = int(is_outlier.sum())
+
+        # 5. Mask outliers with NaN and apply linear interpolation
+        df_clean.loc[is_outlier, col] = np.nan
+        df_clean[col] = df_clean[col].interpolate(
+            method="linear", limit_direction="both"
+        )
+
+    return df_clean, context
+
 
 def deduplicate_DEPRECATED(
     df: pd.DataFrame,
@@ -272,6 +307,7 @@ def compute_lag(df: pd.DataFrame, context: Context):
     context["lag_idx"] = int(lags[np.argmax(corr)])
     return df, context
 
+
 def align_to_reference_deprecated(
     df: pd.DataFrame,
     context: Context,
@@ -361,6 +397,18 @@ def trim_stationary(
 
     if len(df) > 0:
         df["Time (s)"] -= df["Time (s)"].iloc[0]
+
+    return df, context
+
+def trim_reference(
+    df: pd.DataFrame,
+    context: Context,
+) -> tuple[pd.DataFrame, Context]:
+
+    start_time = -0.1
+    end_time = 0.4
+
+    df = df[(df["Time (s)"] > start_time) & (df["Time (s)"] < end_time)].copy()
 
     return df, context
 
@@ -861,17 +909,18 @@ def resample_reference(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Co
 # ALLAN VARIANCE TRANSFORMS
 # =========================================================
 
-def calculate_allan_variance_transform(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
+def calculate_allan_variance_transform(df: pd.DataFrame, ctx: Context,both = False) -> tuple[pd.DataFrame, Context]:
     """
     Computes Allan variance for relevant columns in the dataframe.
     """
     filename = ctx["input_path"].name
 
     # Determine columns to analyze based on file prefix
-    if filename.startswith("accel"):
-        cols = ["LinAccX (m/s2)", "LinAccY (m/s2)", "LinAccZ (m/s2)", "LinAccRes (m/s2)"]
-    elif filename.startswith("gyro"):
-        cols = ["RotVelX (rad/s)", "RotVelY (rad/s)", "RotVelZ (rad/s)", "RotVelRes (rad/s)"]
+    if not both and (filename.startswith("accel") or filename.startswith("gyro")):
+        if filename.startswith("accel"):
+            cols = ["LinAccX (m/s2)", "LinAccY (m/s2)", "LinAccZ (m/s2)", "LinAccRes (m/s2)"]
+        elif filename.startswith("gyro"):
+            cols = ["RotVelX (rad/s)", "RotVelY (rad/s)", "RotVelZ (rad/s)", "RotVelRes (rad/s)"]
     else:
         # Default to all numeric columns except Time, triggered, and battery info
         cols = [c for c in df.columns if any(x in c for x in ["Acc", "Vel", "Rot"])]

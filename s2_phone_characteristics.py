@@ -11,40 +11,46 @@ if __name__ == "__main__":
 
     print("Collecting characteristics...")
     
-    # Drops
-    ppl.run_directory(
-        pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
-        src_dir=Path("data_processing_gitignore/phone_drop_test_data/parsed"),
-        output_dir=individual_dir,
-        log_path=individual_dir / "characteristics_drops.csv"
-    )
+    # # Drops
+    # ppl.run_directory(
+    #     pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
+    #     src_dir=Path("data_processing_gitignore/phone_drop_test_data/parsed"),
+    #     output_dir=individual_dir,
+    #     log_path=individual_dir / "characteristics_drops.csv"
+    # )
 
     # Stationary
     ppl.run_directory(
         pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
-        src_dir=Path("data_processing_gitignore/stationary/parsed"),
+        src_dir=Path("data_processing_gitignore/stationary/start/parsed"),
         output_dir=individual_dir,
-        log_path=individual_dir / "characteristics_stationary.csv"
+        log_path=individual_dir / "start_characteristics_stationary.csv"
     )
-
-    # Calibration
     ppl.run_directory(
         pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
-        src_dir=Path("data_processing_gitignore/6axis_calibaration/parsed"),
+        src_dir=Path("data_processing_gitignore/stationary/end/parsed"),
         output_dir=individual_dir,
-        log_path=individual_dir / "characteristics_calibration.csv"
+        log_path=individual_dir / "end_characteristics_stationary.csv"
     )
 
-    # 2. Aggregate the collected logs into the final project summary
-    # We use the same run_directory pattern with null_saver
+    # # Calibration
+    # ppl.run_directory(
+    #     pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
+    #     src_dir=Path("data_processing_gitignore/6axis_calibaration/parsed"),
+    #     output_dir=individual_dir,
+    #     log_path=individual_dir / "characteristics_calibration.csv"
+    # )
+
+    # # 2. Aggregate the collected logs into the final project summary
+    # # We use the same run_directory pattern with null_saver
     
 
-    print("Running final aggregation...")
-    ppl.run_directory(
-        pipeline=ppl.definitions.CHARACTERISTICS_AGGREGATION_PIPELINE,
-        src_dir=individual_dir,
-        output_dir=Path("data_processing_gitignore/phone_characteristics/aggregated"),
-        log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/characteristics_aggregation_log.csv")
-    )
+    # print("Running final aggregation...")
+    # ppl.run_directory(
+    #     pipeline=ppl.definitions.CHARACTERISTICS_AGGREGATION_PIPELINE,
+    #     src_dir=individual_dir,
+    #     output_dir=Path("data_processing_gitignore/phone_characteristics/aggregated"),
+    #     log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/characteristics_aggregation_log.csv")
+    # )
 
     print("Workflow complete")

@@ -10,12 +10,12 @@ import pipelines as ppl
 # )
 
 
-continuous_drops_results = ppl.run_directory(
-    pipeline=ppl.definitions.EXTRACT_DROPS_PIPELINE,
-    src_dir=Path("data_processing_gitignore/RAW_DATA/continuous_drops"),
-    output_dir=Path("data_processing_gitignore/phone_drop_test_data/parsed"),
-    log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/continuous_drops_parsing_log.csv")
-)
+# continuous_drops_results = ppl.run_directory(
+#     pipeline=ppl.definitions.EXTRACT_DROPS_PIPELINE,
+#     src_dir=Path("data_processing_gitignore/RAW_DATA/continuous_drops"),
+#     output_dir=Path("data_processing_gitignore/phone_drop_test_data/parsed"),
+#     log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/continuous_drops_parsing_log.csv")
+# )
 
 # continuous_drops_calibration_results = ppl.run_directory(
 #     pipeline=ppl.definitions.EXTRACT_CALIBRATION_PIPELINE,
@@ -46,23 +46,17 @@ continuous_drops_results = ppl.run_directory(
 #     log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/JLR_past_crashtests_parsing_log.csv")
 # )
 
-# stationary_results = ppl.run_directory(
-#     pipeline=ppl.definitions.STATIONARY_PARSING_PIPELINE,
-#     src_dir=Path("data_processing_gitignore/RAW_DATA/continuous_stationary"),
-#     output_dir=Path("data_processing_gitignore/stationary/parsed"),
-#     log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/continuous_stationary_parsing_log.csv")
-# )
+stationary_results = ppl.run_directory(
+    pipeline=ppl.definitions.STATIONARY_PARSING_PIPELINE,
+    src_dir=Path("data_processing_gitignore/RAW_DATA/continuous_stationary"),
+    output_dir=Path("data_processing_gitignore/stationary/start/parsed"),
+    log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/continuous_stationary_parsing_log.csv")
+)
 
-# ACCEL_continuous_stationary_accel_framed_end_results = ppl.run_directory(
-#     pipeline=ppl.definitions.PHONE_ACCEL_PIPELINE,
-#     src_dir=Path("data_processing_gitignore/RAW_DATA/continuous_stationary_accel_framed_end"),
-#     output_dir=Path("data_processing_gitignore/phone_drop_test_data/parsed"),
-#     log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/accel_continuous_stationary_accel_framed_end_parsing_log.csv")
-# )
-# GYRO_continuous_stationary_accel_framed_end_results = ppl.run_directory(
-#     pipeline=ppl.definitions.PHONE_GYRO_PIPELINE,
-#     src_dir=Path("data_processing_gitignore/RAW_DATA/continuous_stationary_accel_framed_end"),
-#     output_dir=Path("data_processing_gitignore/phone_drop_test_data/parsed"),
-#     log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/gyro_continuous_stationary_accel_framed_end_parsing_log.csv")
-# )
 
+continuous_stationary_accel_framed_end_results = ppl.run_directory(
+    pipeline=ppl.definitions.STATIONARY_PARSING_PIPELINE_BOTH,
+    src_dir=Path("data_processing_gitignore/RAW_DATA/continuous_stationary_accel_framed_end"),
+    output_dir=Path("data_processing_gitignore/stationary/end/parsed"),
+    log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/continuous_stationary_accel_framed_end_parsing_log.csv")
+)

@@ -63,22 +63,22 @@ if __name__ == "__main__":
     # Base directories
     DATA_DIR = Path("data_processing_gitignore")
     WEBAPP_DATA_DIR = Path("my_app/data")
-
-    # 1. Car Crash Data
-    convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "car_crash_data" / "parsed",
-        output_dir=WEBAPP_DATA_DIR / "car_crash_data_parquet"
-    )
-
-    # 2. Metadata and Logs (The App expects these in one place)
     LOGS_DEST = WEBAPP_DATA_DIR / "lookup_tables_parquet"
     
-    # Logs from lookup_tables
-    convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "lookup_tables",
-        output_dir=LOGS_DEST,
-        rename_map={"data_collection_log(Maxim Tests).csv": "data_collection_log.parquet"}
-    )
+
+    # # 1. Car Crash Data
+    # convert_csv_dir_to_parquet(
+    #     source_dir=DATA_DIR / "car_crash_data" / "parsed",
+    #     output_dir=WEBAPP_DATA_DIR / "car_crash_data_parquet"
+    # )
+
+
+    # # Logs from lookup_tables
+    # convert_csv_dir_to_parquet(
+    #     source_dir=DATA_DIR / "lookup_tables",
+    #     output_dir=LOGS_DEST,
+    #     rename_map={"data_collection_log(Maxim Tests).csv": "data_collection_log.parquet"}
+    # )
     
     # Aggregated characteristics
     convert_csv_dir_to_parquet(
@@ -87,33 +87,42 @@ if __name__ == "__main__":
         rename_map={"characteristics_drops.csv": "phone_characteristics_aggregated.parquet"}
     )
 
-    # 3. Phone Drop Test Data - Reference Signals
-    convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "phone_drop_test_data" / "reference",
-        output_dir=WEBAPP_DATA_DIR / "phone_drop_test_data_parquet" / "phone_reference_signals"
-    )
+    # # 3. Phone Drop Test Data - Reference Signals
+    # convert_csv_dir_to_parquet(
+    #     source_dir=DATA_DIR / "phone_drop_test_data" / "reference",
+    #     output_dir=WEBAPP_DATA_DIR / "phone_drop_test_data_parquet" / "phone_reference_signals"
+    # )
     
-    # 4. Phone Drop Test Data - Framed
-    convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "phone_drop_test_data" / "framed", 
-        output_dir=WEBAPP_DATA_DIR / "phone_drop_test_data_parquet" / "phone_framed"
-    )
+    # # 4. Phone Drop Test Data - Framed
+    # convert_csv_dir_to_parquet(
+    #     source_dir=DATA_DIR / "phone_drop_test_data" / "framed", 
+    #     output_dir=WEBAPP_DATA_DIR / "phone_drop_test_data_parquet" / "phone_framed"
+    # )
 
-    # 5. Stationary Data - Framed
+    # 5. Stationary Data start
     convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "stationary" / "parsed",
-        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "parsed",
+        source_dir=DATA_DIR / "stationary" / "start" / "parsed",
+        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "start" / "parsed",
         nrows=1_000
     )
-
-    # 6. Stationary Data - Allan Variance
     convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "stationary" / "allan_variance",
-        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "allan_variance"
+        source_dir=DATA_DIR / "stationary"/ "start" / "allan_variance",
+        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "start" / "allan_variance"
     )
 
-    # 7. 6-Axis Calibration
+    # 6. Stationary Data end
     convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "6axis_calibaration" / "parsed",
-        output_dir=WEBAPP_DATA_DIR / "6axis_calibaration_parquet"
+        source_dir=DATA_DIR / "stationary" / "end" / "parsed",
+        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end" / "parsed",
+        nrows=1_000
     )
+    convert_csv_dir_to_parquet(
+        source_dir=DATA_DIR / "stationary"/ "end" / "allan_variance",
+        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end" / "allan_variance"
+    )
+
+    # # 7. 6-Axis Calibration
+    # convert_csv_dir_to_parquet(
+    #     source_dir=DATA_DIR / "6axis_calibaration" / "parsed",
+    #     output_dir=WEBAPP_DATA_DIR / "6axis_calibaration_parquet"
+    # )
