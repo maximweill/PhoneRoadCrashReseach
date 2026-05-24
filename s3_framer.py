@@ -92,20 +92,20 @@ def run_from_clean_log(
 
 if __name__ == "__main__":
 
-    #=========================================================
-    #ONLY RUN REFERENCE PARSING AFTER PARSING THE PHONE CHARACTERISTICS 
-    ##=========================================================
-    # Parse reference signals from transformed headform data
-    reference_results = ppl.run_directory(
-        pipeline=ppl.definitions.REFERENCE_PARSING_PIPELINE,
-        src_dir=Path("data_processing_gitignore/RAW_DATA/transformed_headform"),
-        output_dir=Path("data_processing_gitignore/phone_drop_test_data/sync_ref"),
-        log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/reference_parsing_log.csv"),
-        extension="*.xlsx",
-        extra_context = {
-            "phone_characteristics_aggregated": Path("data_processing_gitignore/phone_characteristics/aggregated/characteristics_drops.csv")
-        }
-    )
+    # #=========================================================
+    # #ONLY RUN REFERENCE PARSING AFTER PARSING THE PHONE CHARACTERISTICS 
+    # ##=========================================================
+    # # Parse reference signals from transformed headform data
+    # reference_results = ppl.run_directory(
+    #     pipeline=ppl.definitions.REFERENCE_PARSING_PIPELINE,
+    #     src_dir=Path("data_processing_gitignore/RAW_DATA/transformed_headform"),
+    #     output_dir=Path("data_processing_gitignore/phone_drop_test_data/sync_ref"),
+    #     log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/reference_parsing_log.csv"),
+    #     extension="*.xlsx",
+    #     extra_context = {
+    #         "phone_characteristics_aggregated": Path("data_processing_gitignore/phone_characteristics/aggregated/characteristics_drops.csv")
+    #     }
+    # )
 
     run_from_clean_log(
         pipeline=ppl.definitions.PHONE_DROP_FRAMING_PIPELINE,

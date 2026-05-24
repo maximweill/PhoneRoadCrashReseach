@@ -521,7 +521,13 @@ def remove_accidental_triggers(
         if dt >= min_interval_s:
             valid_inc_indices.append(idx)
             last_valid_time = current_time
-    ctx["trigger_durations"] = trigger_durations
+    
+
+    if len(valid_inc_indices)>=11: #the maximum number of triggers should be 10
+        valid_inc_indices = valid_inc_indices[0:10]
+        ctx["trigger_durations"] = trigger_durations[0:10]
+    else:
+        ctx["trigger_durations"] = trigger_durations
 
     new_trigger = np.zeros(len(df), dtype=int)
     for i, start_idx in enumerate(valid_inc_indices, 1):
@@ -555,7 +561,9 @@ def extract_drops(
     for idx,next_idx, level in zip(trigger_indices,trigger_indices[1:], trigger_levels):
         # Window starts at increment and goes for window_s
         t_start = df.loc[idx, "Time (s)"]
-        t_end = max(df.loc[next_idx, "Time (s)"] - except_s)
+        t_end = df.loc[next_idx, "Time (s)"] - except_s
+        if t_end <= t_start:
+            continue
         
         seg = df[(df["Time (s)"] >= t_start) & (df["Time (s)"] < t_end)].copy()
         seg["trigger"] = level
