@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import re
+from pathlib import Path
 from scipy.interpolate import interp1d
 from .core import Context
 from .helper import _compute_allan_variance
@@ -12,16 +13,13 @@ from .helper import _compute_allan_variance
 G: float = 9.80665
 DEG2RAD: float = np.pi / 180.0
 
-
-
 # =========================================================
 # PARSING TRANSFORMS
 # =========================================================
 
-
 def normalize_time_column(
     df: pd.DataFrame,
-    context: Context,
+    ctx: Context,
 ) -> tuple[pd.DataFrame, Context]:
 
     if "time_ns" not in df.columns:
@@ -30,12 +28,11 @@ def normalize_time_column(
         else:
             raise ValueError("Missing time column")
 
-    return df, context
-
+    return df, ctx
 
 def ensure_sensor_columns(
     df: pd.DataFrame,
-    context: Context,
+    ctx: Context,
 ) -> tuple[pd.DataFrame, Context]:
 
     cols = [
@@ -47,22 +44,21 @@ def ensure_sensor_columns(
         if c not in df.columns:
             df[c] = 0.0
 
-    return df, context
-
+    return df, ctx
 
 def sort_by_time(
     df: pd.DataFrame,
-    context: Context,
+    ctx: Context,
 ) -> tuple[pd.DataFrame, Context]:
 
     if not df["time_ns"].is_monotonic_increasing:
         df = df.sort_values("time_ns").reset_index(drop=True)
 
-    return df, context
+    return df, ctx
 
 def interpolate_outliers(
     df: pd.DataFrame,
-    context: Context,
+    ctx: Context,
 ) -> tuple[pd.DataFrame, Context]:
     # 1. Work on a copy to protect the original dataset
     df_clean = df.copy()
@@ -83,9 +79,9 @@ def interpolate_outliers(
         is_outlier = (df_clean[col] - median).abs() > (
             threshold_multiplier * mad
         )
-        context[f"{col}_MAD"] = mad
-        context[f"{col}_median"] = median
-        context[f"{col}_n_outliers"] = int(is_outlier.sum())
+        ctx[f"{col}_MAD"] = mad
+        ctx[f"{col}_median"] = median
+        ctx[f"{col}_n_outliers"] = int(is_outlier.sum())
 
         # 5. Mask outliers with NaN and apply linear interpolation
         df_clean.loc[is_outlier, col] = np.nan
@@ -93,12 +89,11 @@ def interpolate_outliers(
             method="linear", limit_direction="both"
         )
 
-    return df_clean, context
-
+    return df_clean, ctx
 
 def deduplicate_DEPRECATED(
     df: pd.DataFrame,
-    context: Context,
+    ctx: Context,
     threshold_ns: int = 500_000,
 ) -> tuple[pd.DataFrame, Context]:
 
@@ -152,15 +147,15 @@ def deduplicate_DEPRECATED(
 
     df = df.loc[keep].reset_index(drop=True)
 
-    context["removed_rows"] = removed
-    context["initial_rows"] = len(keep)
-    context["final_rows"] = len(df)
+    ctx["removed_rows"] = removed
+    ctx["initial_rows"] = len(keep)
+    ctx["final_rows"] = len(df)
 
-    return df, context
+    return df, ctx
 
 def accelerometer_based_timestamps(
     df: pd.DataFrame,
-    context: Context,
+    ctx: Context,
 ) -> tuple[pd.DataFrame, Context]:
 
     sensor_cols = [
@@ -182,15 +177,15 @@ def accelerometer_based_timestamps(
 
     df = df.loc[keep].reset_index(drop=True)
 
-    context["acc_removed_rows"] = removed
-    context["acc_initial_rows"] = len(keep)
-    context["acc_final_rows"] = len(df)
+    ctx["acc_removed_rows"] = removed
+    ctx["acc_initial_rows"] = len(keep)
+    ctx["acc_final_rows"] = len(df)
 
-    return df, context
+    return df, ctx
 
 def deduplicate(
     df: pd.DataFrame,
-    context: Context,
+    ctx: Context,
 ) -> tuple[pd.DataFrame, Context]:
 
     keep = ~df["time_ns"].duplicated(keep="first")
@@ -199,15 +194,15 @@ def deduplicate(
 
     df = df.loc[keep].reset_index(drop=True)
     
-    context["dedup_removed_rows"] = removed
-    context["dedup_initial_rows"] = len(keep)
-    context["dedup_final_rows"] = len(df)
+    ctx["dedup_removed_rows"] = removed
+    ctx["dedup_initial_rows"] = len(keep)
+    ctx["dedup_final_rows"] = len(df)
 
-    return df, context
+    return df, ctx
 
 def convert_units(
     df: pd.DataFrame,
-    context: Context,
+    ctx: Context,
 ) -> tuple[pd.DataFrame, Context]:
 
     t = df["time_ns"].to_numpy(dtype=np.float64) / 1e9
@@ -258,205 +253,7 @@ def convert_units(
         **extra_cols
     })
 
-    return df, context
-
-
-# =========================================================
-# FRAMING TRANSFORMS
-# =========================================================
-from scipy import signal
-
-def ref_timestamps_matching(df: pd.DataFrame, context: Context):
-    ref_time = context["ref_df"]["Time (s)"]
-
-    t_orig = df["Time (s)"]
-    t_new = ref_time.copy()
-
-    resampled_data = {"Time (s)": ref_time.copy()}
-
-    # Resample each sensor column
-    for col in df.columns:
-        if col == "Time (s)":
-            continue
-
-        # interp1d for linear interpolation
-        f = interp1d(t_orig, df[col].to_numpy(), kind='linear', fill_value="extrapolate")
-        resampled_data[col] = f(t_new)
-
-    df_new = pd.DataFrame(resampled_data)
-
-    context["len_ratio"] = len(df)/len(df_new)
-
-    return df_new, context
-
-def compute_lag(df: pd.DataFrame, context: Context):
-    ref_df = context["ref_df"]
-
-    sig_col = context.get("signal_col", "RotVelX (rad/s)")
-    ref_sig_col = context.get("ref_signal_col", "RotVelX (rad/s)")
-
-    sig_p = np.nan_to_num(df[sig_col].to_numpy())
-    sig_r = np.nan_to_num(ref_df[ref_sig_col].to_numpy())
-
-    sig_p = (sig_p - sig_p.mean()) / (sig_p.std() + 1e-9)
-    sig_r = (sig_r - sig_r.mean()) / (sig_r.std() + 1e-9)
-
-    corr = signal.correlate(sig_p, sig_r, mode="full", method="fft")
-    lags = signal.correlation_lags(len(sig_p), len(sig_r), mode="full")
-
-    context["lag_idx"] = int(lags[np.argmax(corr)])
-    return df, context
-
-
-def align_to_reference_deprecated(
-    df: pd.DataFrame,
-    context: Context,
-) -> tuple[pd.DataFrame, Context]:
-
-    lag = int(context.get("lag_idx", 0))
-    ref_df = context["ref_df"]
-
-    # clamp lag to valid range (prevents crashes on edge cases)
-    lag = max(0, min(lag, len(df) - 1))
-
-    t0_ref = ref_df["Time (s)"].iloc[0]
-    t_at_lag = df["Time (s)"].iloc[lag]
-
-    offset = t0_ref - t_at_lag
-    context["offset"] = offset
-
-    # align window to reference length
-    end = min(lag + len(ref_df), len(df))
-    df = df.iloc[lag:end].copy()
-
-    df["Time (s)"] = df["Time (s)"] + offset
-
-    return df, context
-
-def align_to_reference(
-    df: pd.DataFrame,
-    context: Context,
-) -> tuple[pd.DataFrame, Context]:
-
-    lag = int(context.get("lag_idx", 0))
-    ref_df = context["ref_df"]
-
-    if lag >= 0:
-        start_df = lag
-        start_ref = 0
-    else:
-        start_df = 0
-        start_ref = -lag
-
-    overlap = min(
-        len(df) - start_df,
-        len(ref_df) - start_ref,
-    )
-
-    if overlap <= 0:
-        raise ValueError("No overlap between signals")
-
-    df_aligned = df.iloc[start_df:start_df + overlap].copy()
-
-    t_df = df_aligned["Time (s)"].iloc[0]
-    t_ref = ref_df["Time (s)"].iloc[start_ref]
-
-    offset = t_ref - t_df
-    df_aligned["Time (s)"] += offset
-
-    context["offset"] = offset
-
-    return df_aligned, context
-
-def trim_stationary(
-    df: pd.DataFrame,
-    context: Context,
-) -> tuple[pd.DataFrame, Context]:
-
-    threshold = context.get("impact_threshold", 11)
-
-    t = df["Time (s)"].to_numpy()
-    acc = df["LinAccRes (m/s2)"].to_numpy()
-
-    mask = acc > threshold
-    impact_times = t[mask]
-
-    t_start, t_end = t[0], t[-1]
-    t_mid = (t_start + t_end) / 2
-
-    first = impact_times[impact_times < t_mid]
-    second = impact_times[impact_times > t_mid]
-
-    start_time = first[-1] if len(first) else t_start
-    end_time = second[0] if len(second) else t_end
-
-    start_time += context.get("buffer_after", 600)
-    end_time -= context.get("buffer_before", 60)
-
-    df = df[(df["Time (s)"] > start_time) & (df["Time (s)"] < end_time)].copy()
-
-    if len(df) > 0:
-        df["Time (s)"] -= df["Time (s)"].iloc[0]
-
-    return df, context
-
-def trim_reference(
-    df: pd.DataFrame,
-    context: Context,
-) -> tuple[pd.DataFrame, Context]:
-
-    start_time = -0.1
-    end_time = 0.4
-
-    df = df[(df["Time (s)"] > start_time) & (df["Time (s)"] < end_time)].copy()
-
-    return df, context
-
-
-# =========================================================
-# Logging TRANSFORMS
-# =========================================================
-
-def drop_failed_rows(df: pd.DataFrame, ctx: Context):
-    df = df[df["Successful"]=="TRUE"]
     return df, ctx
-
-def drop_empty_rows(df: pd.DataFrame, ctx: Context):
-    df = df.dropna(how="all")
-    df = df.dropna(axis=1, how="all")
-    return df, ctx
-
-
-def normalize_column_names(df: pd.DataFrame, ctx: Context):
-    # Conservative cleaning: strip and remove only truly problematic chars
-    # Keeps spaces, parens, and slashes for unit consistency
-    df.columns = (
-        df.columns
-        .str.strip()
-        .str.replace(r"[^a-zA-Z0-9 ()//_]", "", regex=True)
-    )
-    return df, ctx
-
-
-def normalize_log_columns(df: pd.DataFrame, ctx: Context):
-    # Aggressive cleaning for logbooks: convert to snake_case
-    df.columns = (
-        df.columns
-        .str.strip()
-        .str.replace(r"[\s/-]+", "_", regex=True)
-        .str.replace(r"[^a-zA-Z0-9_]", "", regex=True)
-        .str.replace(r"__+", "_", regex=True)
-        .str.strip("_")
-    )
-    return df, ctx
-
-
-def extract_phone_id(df: pd.DataFrame, ctx: Context):
-    if "File_Name" in df.columns:
-        df["phone_id"] = df["File_Name"].str.extract(r"(Phone\d+)")
-    return df, ctx
-
-
 
 def parse_test_metadata(df: pd.DataFrame, ctx: Context):
     """
@@ -519,6 +316,45 @@ def clean_speed_column(df: pd.DataFrame, ctx: Context):
 
     return df, ctx
 
+# =========================================================
+# Logging TRANSFORMS
+# =========================================================
+
+def drop_failed_rows(df: pd.DataFrame, ctx: Context):
+    df = df[df["Successful"]=="TRUE"]
+    return df, ctx
+
+def drop_empty_rows(df: pd.DataFrame, ctx: Context):
+    df = df.dropna(how="all")
+    df = df.dropna(axis=1, how="all")
+    return df, ctx
+
+def normalize_column_names(df: pd.DataFrame, ctx: Context):
+    # Conservative cleaning: strip and remove only truly problematic chars
+    # Keeps spaces, parens, and slashes for unit consistency
+    df.columns = (
+        df.columns
+        .str.strip()
+        .str.replace(r"[^a-zA-Z0-9 ()//_]", "", regex=True)
+    )
+    return df, ctx
+
+def normalize_log_columns(df: pd.DataFrame, ctx: Context):
+    # Aggressive cleaning for logbooks: convert to snake_case
+    df.columns = (
+        df.columns
+        .str.strip()
+        .str.replace(r"[\s/-]+", "_", regex=True)
+        .str.replace(r"[^a-zA-Z0-9_]", "", regex=True)
+        .str.replace(r"__+", "_", regex=True)
+        .str.strip("_")
+    )
+    return df, ctx
+
+def extract_phone_id(df: pd.DataFrame, ctx: Context):
+    if "File_Name" in df.columns:
+        df["phone_id"] = df["File_Name"].str.extract(r"(Phone\d+)")
+    return df, ctx
 
 # =========================================================
 # CONTINUOUS DROPS & CALIBRATION TRANSFORMS
@@ -773,45 +609,39 @@ def compute_sensor_max_stats(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFra
     return df, ctx
 
 def create_characteristics_summary(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
-    
-    # Extract phone id from filename if not already present
+    # 1. Extract phone id from filename if not already present in ctx
     if "phone_id" not in ctx:
         match = re.search(r"(Phone\d+)", ctx["input_path"].name)
         ctx["phone_id"] = match.group(1) if match else "Unknown"
 
-    # Define standard metrics we want to keep
+    # Define standard metrics we want to keep from the top-level context
     characteristics_keys = [
         "phone_id", "fs_mean", "fs_median", "fs_iqr", 
-        "battery_temp_c_mean", "battery_temp_c_median", "battery_temp_c_iqr", "initial_magX_uT", "initial_magY_uT", "initial_magZ_uT"
+        "battery_temp_c_mean", "battery_temp_c_median", "battery_temp_c_iqr", 
+        "initial_magX_uT", "initial_magY_uT", "initial_magZ_uT"
     ]
     
-    # Create the row and also clean the context so run_directory produces a clean log
-    summary_row = {}
+    # This is the ONLY dictionary we will use to build the DataFrame row
+    final_row = {}
     
-    # Identify keys to keep in ctx for the final log_df
-    keys_to_keep = set()
+    final_row["input_path"] = ctx["input_path"]
     
-    # Always keep filename
-    summary_row["filename"] = ctx["input_path"].name
+    # 2. Extract individual metadata dictionary items as independent top-level columns
+    metadata = ctx.get("metadata", {})
+    for meta_key, meta_val in metadata.items():
+        final_row[meta_key] = meta_val  # Becomes independent columns: 'Device', 'Date', etc.
 
-    for k, v in ctx.items():
-        if k.startswith("max_") or k in characteristics_keys:
-            summary_row[k] = v
-            keys_to_keep.add(k)
-        elif not k.startswith("_") and k not in ["output_dir", "input_path", "accel", "gyro", "rot_acc"] and isinstance(v, (int, float, str)):
-            summary_row[k] = v
-            keys_to_keep.add(k)
+    # 3. Pull explicitly allowed characteristics from top-level ctx
+    for key in characteristics_keys:
+        if key in ctx:
+            final_row[key] = ctx[key]
 
-    # Prune ctx of large objects or irrelevant data to keep run_directory's output clean
-    all_keys = list(ctx.keys())
-    for k in all_keys:
-        if k not in keys_to_keep and not k.startswith("_") and k != "input_path":
-            # We don't delete input_path as it might be needed by the runner logic internally
-            # but we can set to None or ignore
-            pass
-            
-    summary_df = pd.DataFrame([summary_row])
-    return summary_df, ctx
+    # 4. Pull dynamic "max_" columns from top-level ctx, ignoring anything else
+    for key, val in ctx.items():
+        if key.startswith("max_"):
+            final_row[key] = val
+
+    return df, final_row
 
 def aggregate_characteristics_by_phone(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
     """
@@ -827,8 +657,8 @@ def aggregate_characteristics_by_phone(df: pd.DataFrame, ctx: Context) -> tuple[
                    "battery_temp_c_mean", "battery_temp_c_median", "battery_temp_c_iqr",
                    "initial_magX_uT", "initial_magY_uT", "initial_magZ_uT"]
     
-    # Metadata columns we want to mode
-    metadata_cols = ["Device", "Accelerometer", "Gyroscope", "Magnetometer"]
+    # Metadata columns we want to grab the mode of
+    metadata_cols = ["Device", "Accelerometer", "Gyroscope", "Magnetometer", "Crash Date", "Crash Time", "Target Orientation"]
     
     # Sensor max columns we want the global max of
     max_cols = [c for c in df.columns if c.startswith("max_")]
@@ -837,12 +667,16 @@ def aggregate_characteristics_by_phone(df: pd.DataFrame, ctx: Context) -> tuple[
     for col in avg_metrics:
         if col in df.columns:
             agg_rules[col] = "mean"
+            
     for col in max_cols:
         agg_rules[col] = "max"
+        
     for col in metadata_cols:
         if col in df.columns:
+            # Code to safely grab the most common string value (the mode)
             agg_rules[col] = lambda x: x.dropna().mode().iloc[0] if not x.dropna().mode().empty else np.nan
 
+    # Group by the phone_id column
     df_aggregated = df.groupby("phone_id").agg(agg_rules).reset_index()
     
     # Rounding for readability
@@ -850,6 +684,39 @@ def aggregate_characteristics_by_phone(df: pd.DataFrame, ctx: Context) -> tuple[
     df_aggregated[numeric_cols] = df_aggregated[numeric_cols].round(3)
 
     return df_aggregated, ctx
+
+def add_phyphox_data(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
+    """
+    Joins the aggregated characteristics with sensor range and rate data from Phyphox.
+    """
+    phyphox_path = Path("phyphox_data/fast_data/devices.parquet")
+    if not phyphox_path.exists():
+        print(f"Warning: Phyphox data not found at {phyphox_path}")
+        return df, ctx
+
+    phyphox_df = pd.read_parquet(phyphox_path)
+    
+    # Columns we want to keep from Phyphox data
+    phyphox_cols = [
+        "model",
+        "accelerometer_rate", "accelerometer_range",
+        "gyroscope_rate", "gyroscope_range",
+        "magnetometer_rate", "magnetometer_range",
+        "pressure_sensor_rate", "pressure_sensor_range"
+    ]
+    phyphox_df = phyphox_df[phyphox_cols]
+    df[["Brand", "Model"]] = df["Device"].str.split(" ", n=1, expand=True)
+
+    # Join on Device == model
+    if "Model" in df.columns:
+        df = df.merge(phyphox_df, left_on="Model", right_on="model", how="left")
+        # Optionally drop the redundant 'model' column
+        if "Model" in df.columns:
+            df = df.drop(columns=["model"])
+    else:
+        print("Warning: 'Device' column not found in characteristics. Cannot join with Phyphox data.")
+
+    return df, ctx
 
 def resample_reference(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
     """
@@ -906,8 +773,410 @@ def resample_reference(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Co
     return df_new, ctx
 
 # =========================================================
+# FRAMING TRANSFORMS
+# =========================================================
+from scipy import signal
+
+def ref_timestamps_matching(df: pd.DataFrame, ctx: Context):
+    ref_time = ctx["ref_df"]["Time (s)"]
+
+    t_orig = df["Time (s)"]
+    t_new = ref_time.copy()
+
+    resampled_data = {"Time (s)": ref_time.copy()}
+
+    # Resample each sensor column
+    for col in df.columns:
+        if col == "Time (s)":
+            continue
+
+        # interp1d for linear interpolation
+        f = interp1d(t_orig, df[col].to_numpy(), kind='linear', fill_value="extrapolate")
+        resampled_data[col] = f(t_new)
+
+    df_new = pd.DataFrame(resampled_data)
+
+    ctx["len_ratio"] = len(df)/len(df_new)
+
+    return df_new, ctx
+
+def compute_lag(df: pd.DataFrame, ctx: Context):
+    ref_df = ctx["ref_df"]
+
+    sig_col = ctx.get("signal_col", "RotVelX (rad/s)")
+    ref_sig_col = ctx.get("ref_signal_col", "RotVelX (rad/s)")
+
+    sig_p = np.nan_to_num(df[sig_col].to_numpy())
+    sig_r = np.nan_to_num(ref_df[ref_sig_col].to_numpy())
+
+    sig_p = (sig_p - sig_p.mean()) / (sig_p.std() + 1e-9)
+    sig_r = (sig_r - sig_r.mean()) / (sig_r.std() + 1e-9)
+
+    corr = signal.correlate(sig_p, sig_r, mode="full", method="fft")
+    lags = signal.correlation_lags(len(sig_p), len(sig_r), mode="full")
+
+    ctx["lag_idx"] = int(lags[np.argmax(corr)])
+    return df, ctx
+
+def align_to_reference(
+    df: pd.DataFrame,
+    ctx: Context,
+) -> tuple[pd.DataFrame, Context]:
+
+    lag = int(ctx.get("lag_idx", 0))
+    ref_df = ctx["ref_df"]
+
+    if lag >= 0:
+        start_df = lag
+        start_ref = 0
+    else:
+        start_df = 0
+        start_ref = -lag
+
+    overlap = min(
+        len(df) - start_df,
+        len(ref_df) - start_ref,
+    )
+
+    if overlap <= 0:
+        raise ValueError("No overlap between signals")
+
+    df_aligned = df.iloc[start_df:start_df + overlap].copy()
+
+    t_df = df_aligned["Time (s)"].iloc[0]
+    t_ref = ref_df["Time (s)"].iloc[start_ref]
+
+    offset = t_ref - t_df
+    df_aligned["Time (s)"] += offset
+
+    ctx["offset"] = offset
+
+    return df_aligned, ctx
+
+def trim_stationary(
+    df: pd.DataFrame,
+    ctx: Context,
+) -> tuple[pd.DataFrame, Context]:
+
+    threshold = ctx.get("impact_threshold", 11)
+
+    t = df["Time (s)"].to_numpy()
+    acc = df["LinAccRes (m/s2)"].to_numpy()
+
+    mask = acc > threshold
+    impact_times = t[mask]
+
+    t_start, t_end = t[0], t[-1]
+    t_mid = (t_start + t_end) / 2
+
+    first = impact_times[impact_times < t_mid]
+    second = impact_times[impact_times > t_mid]
+
+    start_time = first[-1] if len(first) else t_start
+    end_time = second[0] if len(second) else t_end
+
+    start_time += ctx.get("buffer_after", 600)
+    end_time -= ctx.get("buffer_before", 60)
+
+    df = df[(df["Time (s)"] > start_time) & (df["Time (s)"] < end_time)].copy()
+
+    if len(df) > 0:
+        df["Time (s)"] -= df["Time (s)"].iloc[0]
+
+    return df, ctx
+
+def trim_reference(
+    df: pd.DataFrame,
+    ctx: Context,
+) -> tuple[pd.DataFrame, Context]:
+
+    start_time = -0.1
+    end_time = 0.4
+
+    df = df[(df["Time (s)"] > start_time) & (df["Time (s)"] < end_time)].copy()
+
+    return df, ctx
+
+
+def match_indices_ref(
+    df: pd.DataFrame,
+    ctx: Context,
+) -> tuple[pd.DataFrame, Context]:
+
+    ref_df = ctx["ref_df"].reset_index(drop=True)
+    df = df.reset_index(drop=True)
+    ctx["len_match"] = len(ref_df) - len(df)
+    time_diff = ref_df["Time (s)"]-df["Time (s)"]
+    ctx["time_match_mean"] = time_diff.mean()
+    ctx["time_match_iqr"] = (
+        time_diff.quantile(0.75)
+        - time_diff.quantile(0.25)
+    )
+
+
+    new_df = pd.concat(
+        [
+            ref_df.add_suffix("_ref"),
+            df.add_suffix("_framed"),
+        ],
+        axis=1,
+    )
+    ctx["skip_col"] = []
+    for col in df:
+        if col not in ref_df.columns:
+            ctx["skip_col"].append(col)
+            new_df.drop(columns=[f"{col}_framed"], inplace=True)
+            continue
+        
+        new_df[f"{col}_diff"] = new_df[f"{col}_ref"]-new_df[f"{col}_framed"]
+    return new_df, ctx
+    
+
+def drop_time(
+    df: pd.DataFrame,
+    ctx: Context,
+) -> tuple[pd.DataFrame, Context]:
+    for col in df.columns:
+        if "Time" in col:
+            df.drop(columns=[col], inplace=True)
+    return df, ctx
+# =========================================================
+# AGREEMENT TRANSFORMS
+# =========================================================
+def reset_index(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
+    df_rest = df.reset_index(drop=True)
+    ctx["bug"] = [] #create a bugs catcher
+    return df_rest, ctx 
+
+def ignore_saturated(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
+    """
+    Identifies and masks saturated sensor readings based on device-specific ranges.
+    """
+    chars_path = ctx.get("characteristics_path")
+    if not chars_path or not Path(chars_path).exists():
+        print("Warning: characteristics_path not found in context. Skipping ignore_saturated.")
+        return df, ctx
+
+    # 1. Extract phone_id from filename
+    filename = ctx["input_path"].name
+    match = re.search(r"(Phone\d+)", filename)
+    if not match:
+        print(f"Warning: Could not extract Phone ID from {filename}. Skipping ignore_saturated.")
+        return df, ctx
+    phone_id = match.group(1)
+
+    # 2. Load characteristics data
+    chars_df = pd.read_csv(chars_path)
+    phone_info = chars_df[chars_df["phone_id"] == phone_id]
+    if phone_info.empty:
+        print(f"Warning: No characteristics found for {phone_id} in {chars_path}. Skipping ignore_saturated.")
+        return df, ctx
+
+    # 3. Get ranges (handling potential NaNs)
+    acc_range = phone_info["accelerometer_range"].iloc[0]
+    gyro_range = phone_info["gyroscope_range"].iloc[0]
+    
+    if pd.isna(acc_range) or pd.isna(gyro_range):
+        print(f"Warning: Missing range data for {phone_id}. Skipping ignore_saturated.")
+        return df, ctx
+
+    # 4. Define thresholds (using a 2% tolerance)
+    acc_thresh = acc_range * 0.98
+    gyro_thresh = gyro_range * 0.98
+
+    # 5. Identify saturated indices
+    # We check the '_framed' columns for saturation
+    acc_cols = ["LinAccX (m/s2)", "LinAccY (m/s2)", "LinAccZ (m/s2)"]
+    gyro_cols = ["RotVelX (rad/s)", "RotVelY (rad/s)", "RotVelZ (rad/s)"]
+
+    acc_mask = pd.Series(False, index=df.index)
+    for col in acc_cols:
+        c = f"{col}_framed"
+        if c in df.columns:
+            acc_mask |= df[c].abs() > acc_thresh
+
+    gyro_mask = pd.Series(False, index=df.index)
+    for col in gyro_cols:
+        c = f"{col}_framed"
+        if c in df.columns:
+            gyro_mask |= df[c].abs() > gyro_thresh
+
+    # 6. Define effected column groups
+    # Saturated accel affects components and magnitude
+    acc_group = acc_cols + ["LinAccRes (m/s2)"]
+    
+    # Saturated gyro affects components, magnitude, and all rotational accelerations
+    gyro_group = gyro_cols + [
+        "RotVelRes (rad/s)", 
+        "RotAccX (rad/s2)", "RotAccY (rad/s2)", "RotAccZ (rad/s2)", "RotAccRes (rad/s2)"
+    ]
+
+    # Magnetometer columns
+    mag_cols = [c.replace("_framed", "") for c in df.columns if "mag" in c.lower() and c.endswith("_framed")]
+
+    # 7. Apply masking (mask _framed, _ref, and _diff for the same indices)
+    for col_stem in acc_group:
+        for suffix in ["_framed", "_ref", "_diff"]:
+            c = f"{col_stem}{suffix}"
+            if c in df.columns:
+                df.loc[acc_mask, c] = np.nan
+
+    for col_stem in gyro_group:
+        for suffix in ["_framed", "_ref", "_diff"]:
+            c = f"{col_stem}{suffix}"
+            if c in df.columns:
+                df.loc[gyro_mask, c] = np.nan
+
+    # Mask mag if either sensor is saturated
+    for col_stem in mag_cols:
+        for suffix in ["_framed", "_ref", "_diff"]:
+            c = f"{col_stem}{suffix}"
+            if c in df.columns:
+                df.loc[acc_mask | gyro_mask, c] = np.nan
+
+    ctx["acc_saturated_samples"] = int(acc_mask.sum())
+    ctx["gyro_saturated_samples"] = int(gyro_mask.sum())
+
+    return df, ctx
+
+
+def compute_n(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
+    ctx["n"] = len(df)
+    return df, ctx
+
+def compute_mae_from_ideal(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
+    for col in df:
+        if col.endswith("_diff"):
+            ctx[f"{col}_mae"] = np.mean(np.abs(df[col]))
+    return df, ctx
+
+from scipy.stats import pearsonr
+def compute_pearson_correlation(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
+    for col in df:
+        if col.endswith("_diff"):
+            stem = col.replace("_diff", "")
+            r, p = pearsonr(df[f"{stem}_ref"], df[f"{stem}_framed"])
+            ctx[f"{stem}_pearson_r"] = r
+            ctx[f"{stem}_pearson_p"] = p
+
+    return df, ctx
+
+import statsmodels.api as sm
+def compute_trendline_regression(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
+    for col in df:
+        if col.endswith("_diff"):
+            stem = col.replace("_diff", "")
+
+            x = df[f"{stem}_ref"]
+            y = df[f"{stem}_framed"]
+
+            X = sm.add_constant(x)
+            model = sm.OLS(y, X).fit()
+
+            # parameters
+            intercept = model.params.iloc[0]
+            slope = model.params.iloc[1]
+
+            # predictions
+            y_hat = model.predict(X)
+
+            # RMSE of regression fit
+            rmse = np.sqrt(np.mean((y - y_hat) ** 2))
+
+            # store metrics
+            ctx[f"{stem}_slope"] = slope
+            ctx[f"{stem}_intercept"] = intercept
+            ctx[f"{stem}_trend_rmse"] = rmse
+            ctx[f"{stem}_r2"] = model.rsquared
+
+    return df, ctx
+
+import pingouin as pg
+def compute_icc(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
+
+    for col in df:
+        if col.endswith("_diff"):
+            stem = col.replace("_diff", "")
+
+            # --- ALIGN FIRST (critical fix) ---
+            x = df[f"{stem}_ref"].to_numpy()
+            y = df[f"{stem}_framed"].to_numpy()
+
+            n = min(len(x), len(y))
+            if n < 2:
+                continue
+
+            x = x[:n]
+            y = y[:n]
+
+            # --- build long format ---
+            data = pd.DataFrame({
+                "targets": np.repeat(np.arange(n), 2),
+                "raters": ["ref", "framed"] * n,
+                "values": np.ravel(np.column_stack([x, y]))
+            })
+
+            icc_result = pg.intraclass_corr(
+                data=data,
+                targets="targets",
+                raters="raters",
+                ratings="values"
+            )
+
+            # --- SAFE ICC SELECTION ---
+            icc_row = icc_result[
+                icc_result["Type"].isin(["ICC2", "ICC2k"])
+            ]
+
+            if icc_row.empty:
+                ctx["bug"].append(f"icc failed {col}")
+                continue
+
+            icc_value = icc_row.iloc[0]["ICC"]
+            ci95 = icc_row.iloc[0]["CI95%"]
+
+            ctx[f"{stem}_icc"] = icc_value
+            ctx[f"{stem}_icc_ci95_lower"] = ci95[0]
+            ctx[f"{stem}_icc_ci95_upper"] = ci95[1]
+
+    return df, ctx
+
+import numpy as np
+from scipy.stats import ttest_1samp
+def compute_bland_altman(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
+    """
+    Bland Altman agreement analysis per channel.
+    """
+
+    for col in df:
+        if col.endswith("_diff"):
+            stem = col.replace("_diff", "")
+
+            diff = df[col].dropna().to_numpy()
+
+            if len(diff) < 2:
+                continue
+
+            bias = np.mean(diff)
+            sd = np.std(diff)
+
+            t_stat, p = ttest_1samp(df[col], 0)
+            ctx[f"{col}_bias_t_stat"] = t_stat
+            ctx[f"{col}_bias_p"] = p
+
+            loa_upper = bias + 1.96 * sd
+            loa_lower = bias - 1.96 * sd
+
+            ctx[f"{stem}_ba_sd"] = sd
+            ctx[f"{stem}_ba_loa_upper"] = loa_upper
+            ctx[f"{stem}_ba_loa_lower"] = loa_lower
+
+    return df, ctx
+
+# =========================================================
 # ALLAN VARIANCE TRANSFORMS
 # =========================================================
+
 
 def calculate_allan_variance_transform(df: pd.DataFrame, ctx: Context,both = False) -> tuple[pd.DataFrame, Context]:
     """

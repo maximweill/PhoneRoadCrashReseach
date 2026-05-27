@@ -31,8 +31,8 @@ def js_to_dataframe(js_filepath):
 
 
 # FIX: Use explicit absolute paths relative to this file
-devices_js_path = HERE / "devices.js"
-column_map_path = HERE / "column_map.json"
+devices_js_path = HERE /"_gitignore"/ "devices.js"
+column_map_path = HERE /"_gitignore"/ "column_map.json"
 
 devices_data = js_to_dataframe(devices_js_path)
 

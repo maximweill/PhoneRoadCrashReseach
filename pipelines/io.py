@@ -5,14 +5,67 @@ from .core import Path,Context,pd
 # LOADER
 # =========================================================
 
+from pathlib import Path
+import pandas as pd
+import re
+from datetime import datetime
+
+def parse_file_date(input_path:Path)->dict:
+    filename = input_path.stem  # e.g., 'crash_data_20260313_165424__Phone003'
+    
+    # Matches exactly 8 digits, an underscore, and 6 digits anywhere in the name
+    match = re.search(r"(\d{8})_(\d{6})", filename)
+    
+    if match:
+        date_str = match.group(1)  # Captures the 8 digits (e.g., '20260313')
+        time_str = match.group(2)  # Captures the 6 digits (e.g., '165424')
+        
+        try:
+            date = {}
+            dt = datetime.strptime(f"{date_str}_{time_str}", "%Y%m%d_%H%M%S")
+            date["Date"] = dt.strftime("%Y-%m-%d")
+            date["Time"] = dt.strftime("%H:%M:%S")
+            return date
+        except ValueError:
+            return {}
+    return {}
+    
+
+
 def load_csv(input_path: Path, context: Context):
+    # Initialize the metadata dictionary
+    metadata = {}
+    
+    # Read the file line by line to extract comments/metadata
+    with open(input_path, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("#"):
+                # Strip the '#' and whitespace, then try to split by the first ':'
+                clean_line = line.lstrip("#").strip()
+                if ":" in clean_line:
+                    key, val = clean_line.split(":", 1)
+                    metadata[key.strip()] = val.strip()
+            else:
+                # Stop reading once we hit the actual data rows to save time
+                break
+
+    if "Date" not in metadata:
+        metadata.update(parse_file_date(input_path=input_path))
+
+    # Load the dataframe using the 'c' engine as before
     df = pd.read_csv(
         input_path,
         comment="#",
-        engine="c",   # fastest stable pandas engine
+        engine="c",
     )
 
+    # Update context
     context["input_path"] = input_path
+    if "metadata" in context:
+        context["metadata"].update(metadata)
+    else:
+        context["metadata"] = metadata
+    
     return df, context
 
 def load_excel(input_path: Path, context: Context):
@@ -27,11 +80,14 @@ def load_excel(input_path: Path, context: Context):
 # =========================================================
 
 def load_phone_drop_with_ref(input_path: Path, context: dict) -> tuple[pd.DataFrame, dict]:
+    context["metadata"]={}
+
+
     if not input_path.exists():
         context["skip"] = True
         context["skip_reason"] = "input_doesnt_exist"
         return None, context
-
+    
     ref_path = context["ref_path"]
     if not ref_path.exists():
         context["skip"] = True
@@ -39,7 +95,7 @@ def load_phone_drop_with_ref(input_path: Path, context: dict) -> tuple[pd.DataFr
         return None, context
     
     if input_path.suffix == ".csv":
-        df = pd.read_csv(input_path)
+        df,context = load_csv(input_path=input_path,context=context)
     elif  input_path.suffix == ".xlsx":
         df = pd.read_excel(input_path)
     else:
@@ -47,7 +103,8 @@ def load_phone_drop_with_ref(input_path: Path, context: dict) -> tuple[pd.DataFr
         context["skip_reason"] = f"input extension not recognised {input_path.suffix}"
         return None, context
 
-    ref_df = pd.read_csv(ref_path)
+    ref_df,ref_ctx = load_csv(input_path=ref_path,context={})
+    context["metadata"].update(ref_ctx["metadata"])
 
     context["ref_df"] = ref_df
     context["ref_path"] = ref_path
@@ -58,18 +115,30 @@ def load_phone_drop_with_ref(input_path: Path, context: dict) -> tuple[pd.DataFr
 # PARSING SAVERS
 # =========================================================
 
+
 def save_single_csv(df: pd.DataFrame, context: Context) -> list[Path]:
-
-    output_dir: Path = context["output_dir"]
     input_path: Path = context["input_path"]
+    metadata: dict = context.get("metadata", {})  # Use .get() in case metadata isn't present
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if "output_path" in context:
+        output_path:Path = context["output_path"]
+    else:
+        output_dir: Path = context["output_dir"]
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"{input_path.stem}.csv"
 
-    out = output_dir / f"{input_path.stem}.csv"
 
-    df.to_csv(out, index=False)
+    # 1. Open the file in write mode ('w') to write the metadata headers
+    with open(output_path, "w", encoding="utf-8") as f:
+        for key, value in metadata.items():
+            f.write(f"# {key}: {value}\n")
+            
+    # 2. Open the file in append mode ('a') for pandas to dump the dataframe
+    with open(output_path, "a", encoding="utf-8", newline="") as f:
+        df.to_csv(f, index=False)
 
-    return [out]
+    context["output"] = output_path
+    return [output_path]
 
 
 
@@ -90,9 +159,8 @@ def save_split_by_trigger(df: pd.DataFrame, context: Context) -> list[Path]:
         sub = df[df["trigger"] == trig].reset_index(drop=True)
 
         out = output_dir / f"{input_path.stem}_trigger{trig}.csv"
-
-        sub.to_csv(out, index=False)
-
+        context["output_path"] = out
+        save_single_csv(sub,context)
         outputs.append(out)
 
     return outputs
@@ -100,28 +168,6 @@ def save_split_by_trigger(df: pd.DataFrame, context: Context) -> list[Path]:
 # =========================================================
 # FRAMING SAVERS
 # =========================================================
-
-def save_output_path_ctx(df: pd.DataFrame, context: Context) -> list[Path]:
-
-    output_path: Path = context["output_path"]
-
-    df.to_csv(output_path, index=False)
-
-    context["output"] = output_path
-    return [output_path]
-
-def save_reference(df: pd.DataFrame, context: Context) -> list[Path]:
-
-    output_dir: Path = context["output_dir"]
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    stem = context["input_path"].stem
-    out_path = output_dir / f"{stem}.csv"
-
-    df.to_csv(out_path, index=False)
-
-    context["output"] = out_path
-    return [out_path]
 
 def save_stationary(df: pd.DataFrame, context: Context, both = False) -> list[Path]:
 
@@ -139,10 +185,9 @@ def save_stationary(df: pd.DataFrame, context: Context, both = False) -> list[Pa
         out_name = f"both_stationary_{date}_{time}_{phone_id}.csv"
     out_path = output_dir / out_name
 
-    df.to_csv(out_path, index=False)
+    context["output_path"]=out_path
 
-    context["output"] = out_path
-    return [out_path]
+    return save_single_csv(df,context)
 
 def save_allan_variance(df: pd.DataFrame, context: Context) -> list[Path]:
     """
@@ -158,10 +203,10 @@ def save_allan_variance(df: pd.DataFrame, context: Context) -> list[Path]:
     
     out_name = f"{input_path.stem}_allan.csv"
     out_path = output_dir / out_name
-    
-    df.to_csv(out_path, index=False)
-    
-    return [out_path]
+
+    context["output_path"]=out_path
+
+    return save_single_csv(df,context)
 
 def null_saver(df: pd.DataFrame, context: Context) -> list[Path]:
     """

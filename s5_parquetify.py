@@ -59,13 +59,13 @@ def convert_csv_dir_to_parquet(
         pq_file = dest_path / new_name
         convert_csv_to_parquet(csv_file, pq_file, downsample=downsample, nrows=nrows)
 
-if __name__ == "__main__":
-    # Base directories
-    DATA_DIR = Path("data_processing_gitignore")
-    WEBAPP_DATA_DIR = Path("my_app/data")
-    LOGS_DEST = WEBAPP_DATA_DIR / "lookup_tables_parquet"
-    
 
+
+DATA_DIR = Path("data_processing_gitignore")
+WEBAPP_DATA_DIR = Path("my_app/data")
+LOGS_DEST = WEBAPP_DATA_DIR / "lookup_tables_parquet"
+if __name__ == "__main__":
+    # # Base directories
     # # 1. Car Crash Data
     # convert_csv_dir_to_parquet(
     #     source_dir=DATA_DIR / "car_crash_data" / "parsed",
@@ -83,7 +83,7 @@ if __name__ == "__main__":
     # Aggregated characteristics
     convert_csv_dir_to_parquet(
         source_dir=DATA_DIR / "phone_characteristics" / "aggregated",
-        output_dir=LOGS_DEST,
+        output_dir=LOGS_DEST/"characteristics",
         rename_map={"characteristics_drops.csv": "phone_characteristics_aggregated.parquet"}
     )
 
@@ -99,27 +99,27 @@ if __name__ == "__main__":
     #     output_dir=WEBAPP_DATA_DIR / "phone_drop_test_data_parquet" / "phone_framed"
     # )
 
-    # 5. Stationary Data start
-    convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "stationary" / "start" / "parsed",
-        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "start" / "parsed",
-        nrows=1_000
-    )
-    convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "stationary"/ "start" / "allan_variance",
-        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "start" / "allan_variance"
-    )
+    # # 5. Stationary Data start
+    # convert_csv_dir_to_parquet(
+    #     source_dir=DATA_DIR / "stationary" / "start" / "parsed",
+    #     output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "start" / "parsed",
+    #     nrows=1_000
+    # )
+    # convert_csv_dir_to_parquet(
+    #     source_dir=DATA_DIR / "stationary"/ "start" / "allan_variance",
+    #     output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "start" / "allan_variance"
+    # )
 
-    # 6. Stationary Data end
-    convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "stationary" / "end" / "parsed",
-        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end" / "parsed",
-        nrows=1_000
-    )
-    convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "stationary"/ "end" / "allan_variance",
-        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end" / "allan_variance"
-    )
+    # # 6. Stationary Data end
+    # convert_csv_dir_to_parquet(
+    #     source_dir=DATA_DIR / "stationary" / "end" / "parsed",
+    #     output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end" / "parsed",
+    #     nrows=1_000
+    # )
+    # convert_csv_dir_to_parquet(
+    #     source_dir=DATA_DIR / "stationary"/ "end" / "allan_variance",
+    #     output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end" / "allan_variance"
+    # )
 
     # # 7. 6-Axis Calibration
     # convert_csv_dir_to_parquet(

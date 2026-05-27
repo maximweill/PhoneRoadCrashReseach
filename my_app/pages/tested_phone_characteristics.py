@@ -16,11 +16,9 @@ START_CHARACTERISTICS_PATH = (
 END_CHARACTERISTICS_PATH = (
     DATA_DIR / "lookup_tables_parquet" / "end_characteristics_stationary.parquet"
 )
-STATIONARY_DIR = DATA_DIR / "stationary_parquet"
-STATIONARY_START_PARSED = STATIONARY_DIR / "start" / "parsed"
-STATIONARY_START_ALLAN = STATIONARY_DIR / "start" / "allan_variance"
-STATIONARY_END_PARSED = STATIONARY_DIR / "end" / "parsed"
-STATIONARY_END_ALLAN = STATIONARY_DIR / "end" / "allan_variance"
+STATIONARY_INDEX_PATH = (
+    DATA_DIR / "lookup_tables_parquet" / "index" / "stationary_file_index.parquet"
+)
 
 TIME_COLUMN = "Time (s)"
 ACCEL_RES_COLUMN = "LinAccRes (m/s2)"
@@ -30,20 +28,19 @@ TRACE_PLOT_HEIGHT = "420px"
 ALLAN_PLOT_HEIGHT = "460px"
 
 
+def _read_stationary_index() -> pd.DataFrame:
+    if not STATIONARY_INDEX_PATH.exists():
+        return pd.DataFrame()
+    return pd.read_parquet(STATIONARY_INDEX_PATH)
+
+
+STATIONARY_INDEX = _read_stationary_index()
+
+
 def _get_all_phones() -> list[str]:
-    phones = set()
-    for directory in [STATIONARY_START_PARSED, STATIONARY_END_PARSED]:
-        if directory.exists():
-            for file in directory.glob("*.parquet"):
-                # accel_stationary_20260511_001354_Phone004.parquet
-                # both_stationary_20260520_125700_Phone003.parquet
-                stem = file.stem
-                parts = stem.split("_")
-                if len(parts) >= 1:
-                    phone_id = parts[-1]
-                    if phone_id.startswith("Phone"):
-                        phones.add(phone_id)
-    return sorted(list(phones))
+    if STATIONARY_INDEX.empty:
+        return []
+    return sorted(STATIONARY_INDEX["phone_id"].unique().tolist())
 
 
 STATIONARY_PHONES = _get_all_phones()
@@ -212,54 +209,62 @@ def tested_phone_characteristics_page():
 
 
 def _load_sensor_data(phone_id: str | None, sensor: str, phase: str) -> pd.DataFrame:
-    if not phone_id or phone_id == "None":
+    if not phone_id or phone_id == "None" or STATIONARY_INDEX.empty:
         return pd.DataFrame()
 
-    directory = STATIONARY_START_PARSED if phase == "start" else STATIONARY_END_PARSED
-    if not directory.exists():
-        return pd.DataFrame()
+    mask = (
+        (STATIONARY_INDEX["phone_id"] == phone_id)
+        & (STATIONARY_INDEX["session"] == phase)
+        & (STATIONARY_INDEX["type"] == "parsed")
+    )
 
+    # Filter by sensor in file name
     # In "end" phase, both sensors are in one file starting with "both"
-    pattern = f"{sensor}_stationary_*_{phone_id}.parquet"
     if phase == "end":
-        pattern = f"both_stationary_*_{phone_id}.parquet"
+        mask &= STATIONARY_INDEX["file_name"].str.startswith("both")
+    else:
+        mask &= STATIONARY_INDEX["file_name"].str.startswith(sensor)
 
-    files = list(directory.glob(pattern))
+    rows = STATIONARY_INDEX[mask]
     frames = []
-    for f in files:
-        df = pd.read_parquet(f)
-        if not df.empty:
-            df["file"] = f.stem
-            df["phase"] = phase.capitalize()
-            frames.append(df)
+    for _, row in rows.iterrows():
+        path = DATA_DIR / row["path"]
+        if path.exists():
+            df = pd.read_parquet(path)
+            if not df.empty:
+                df["file"] = row["file_name"]
+                if "file" in df.columns and df["file"].dtype == object:
+                    df["file"] = df["file"].apply(lambda x: Path(x).stem if isinstance(x, str) else x)
+                else:
+                    df["file"] = Path(row["file_name"]).stem
+                df["phase"] = phase.capitalize()
+                frames.append(df)
 
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
 def _load_allan_data(phone_id: str | None, sensor: str) -> pd.DataFrame:
-    if not phone_id or phone_id == "None":
+    if not phone_id or phone_id == "None" or STATIONARY_INDEX.empty:
         return pd.DataFrame()
 
+    mask = (STATIONARY_INDEX["phone_id"] == phone_id) & (
+        STATIONARY_INDEX["type"] == "allan_variance"
+    )
+
+    # Start phase: sensor_stationary_...
+    # End phase: both_stationary_...
+    start_mask = mask & (STATIONARY_INDEX["session"] == "start") & STATIONARY_INDEX["file_name"].str.startswith(sensor)
+    end_mask = mask & (STATIONARY_INDEX["session"] == "end") & STATIONARY_INDEX["file_name"].str.startswith("both")
+    
+    rows = STATIONARY_INDEX[start_mask | end_mask]
     frames = []
-
-    # Start phase
-    if STATIONARY_START_ALLAN.exists():
-        pattern = f"{sensor}_stationary_*_{phone_id}_allan.parquet"
-        for f in STATIONARY_START_ALLAN.glob(pattern):
-            df = pd.read_parquet(f)
+    for _, row in rows.iterrows():
+        path = DATA_DIR / row["path"]
+        if path.exists():
+            df = pd.read_parquet(path)
             if not df.empty:
-                df["file"] = f.stem
-                df["phase"] = "Start"
-                frames.append(df)
-
-    # End phase
-    if STATIONARY_END_ALLAN.exists():
-        pattern = f"both_stationary_*_{phone_id}_allan.parquet"
-        for f in STATIONARY_END_ALLAN.glob(pattern):
-            df = pd.read_parquet(f)
-            if not df.empty:
-                df["file"] = f.stem
-                df["phase"] = "End"
+                df["file"] = Path(row["file_name"]).stem
+                df["phase"] = row["session"].capitalize()
                 frames.append(df)
 
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()

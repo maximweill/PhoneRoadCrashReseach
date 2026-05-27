@@ -55,7 +55,7 @@ FRAMED_RESAMPLING_PIPELINE = Pipeline(
         ref_timestamps_matching,
         trim_reference
     ],
-    saver=save_output_path_ctx,
+    saver=save_single_csv,
 )
 
 PHONE_DROP_FRAMING_PIPELINE = Pipeline(
@@ -67,9 +67,40 @@ PHONE_DROP_FRAMING_PIPELINE = Pipeline(
         align_to_reference,
         trim_reference
     ],
-    saver=save_output_path_ctx,
+    saver=save_single_csv,
 )
 
+#
+#CORRELATIONS
+#
+CORRELATION_PIPELINE = Pipeline(
+    name="index_correlation",
+    loader=load_phone_drop_with_ref,
+    transforms=[
+        match_indices_ref,
+        drop_time,
+    ],
+    saver=save_single_csv,
+)
+
+CORRELATION_PARAMETERS = Pipeline(
+    loader=load_csv,
+    name="SENSOR_AGREEMENT_VALIDATION",
+    transforms=[
+        reset_index,
+        ignore_saturated,
+        compute_n,
+        compute_mae_from_ideal,        # error magnitude
+        compute_pearson_correlation,      # signal similarity
+        compute_trendline_regression,     # calibration (slope/intercept)
+        compute_icc,          # agreement metric
+        compute_bland_altman,       # gold standard agreement analysis loa_upper aka
+    ],
+    saver=null_saver,
+)
+#
+#Beans
+#
 STATIONARY_PARSING_PIPELINE = Pipeline(
     name="stationary",
     loader=load_csv,
@@ -125,7 +156,7 @@ REFERENCE_PARSING_PIPELINE = Pipeline(
         resample_reference,
         trim_reference
     ],
-    saver=save_reference,
+    saver=save_single_csv,
 )
 
 #CONTINUOUS EXTRACTION
@@ -179,6 +210,7 @@ CHARACTERISTICS_AGGREGATION_PIPELINE = Pipeline(
     loader=load_csv, 
     transforms=[
         aggregate_characteristics_by_phone,
+        add_phyphox_data,
     ],
     saver=save_single_csv,
 )

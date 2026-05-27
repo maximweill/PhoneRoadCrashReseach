@@ -5,109 +5,58 @@ import plotly.express as px
 from shiny import reactive, render, ui
 from shinywidgets import output_widget, render_plotly
 
-
-DATA_DIR = Path(__file__).resolve().parents[1] / "data"
-LOG_PATH = DATA_DIR / "lookup_tables_parquet" / "data_collection_log.parquet"
-DROP_TEST_DIR = DATA_DIR / "phone_drop_test_data_parquet"
-PHONE_FRAMED_DIR = DROP_TEST_DIR / "phone_framed"
-REFERENCE_DIR = DROP_TEST_DIR / "phone_reference_signals"
+from .standard_filter import (
+    DROP_INDEX,
+    DATA_DIR,
+    filter_log_by_input,
+    get_speed_cards,
+    get_unique_drops,
+    sort_numeric_strings,
+    sorted_strings,
+)
 
 TIME_COLUMN = "Time (s)"
 SUMMARY_PLOT_HEIGHT = "100%"
 COMPONENT_PLOT_HEIGHT = "100%"
 
 
-def _read_log() -> pd.DataFrame:
-    if not LOG_PATH.exists():
-        return pd.DataFrame()
-
-    df = pd.read_parquet(LOG_PATH)
-    df = df[df["phone_id"].notna()].copy()
-    if "Successful" in df.columns:
-        df = df[df["Successful"]]
-
-    df["target_speed_mps"] = df["target_speed_mps"].astype(int).astype(str)
-    df["repeat"] = df["repeat"].astype(int).astype(str)
-    return df
-
-
-DATA_COLLECTION_LOG = _read_log()
-
-
-def _sort_numeric_strings(values: pd.Series) -> list[str]:
-    return sorted(values.dropna().astype(str).unique().tolist(), key=lambda value: int(value))
-
-
-def _sorted_strings(values: pd.Series) -> list[str]:
-    return sorted(values.dropna().astype(str).unique().tolist())
-
-
-def _default_choice(choices: list[str], preferred: str) -> str | None:
-    if preferred in choices:
-        return preferred
-    return choices[0] if choices else None
-
-
-def _speed_choices() -> list[str]:
-    if DATA_COLLECTION_LOG.empty:
-        return ["All"]
-    return ["All"] + _sort_numeric_strings(DATA_COLLECTION_LOG["target_speed_mps"])
-
-
-def _config_choices() -> list[str]:
-    if DATA_COLLECTION_LOG.empty:
-        return []
-    return _sorted_strings(DATA_COLLECTION_LOG["config"])
-
-
-def _repeat_choices() -> list[str]:
-    if DATA_COLLECTION_LOG.empty:
-        return ["All"]
-    return ["All"] + _sort_numeric_strings(DATA_COLLECTION_LOG["repeat"])
-
-
-def _phone_choices() -> list[str]:
-    if DATA_COLLECTION_LOG.empty:
-        return ["All"]
-    return ["All"] + _sorted_strings(DATA_COLLECTION_LOG["phone_id"])
-
-
 def phone_drop_test_page():
-    speeds = _speed_choices()
-    configs = _config_choices()
-    repeats = _repeat_choices()
+    unique_drops = get_unique_drops()
+    if unique_drops.empty:
+        return ui.nav_panel("Phone Drop Test Data", ui.p("No data available"))
+
+    phone_ids = sorted_strings(unique_drops["phone_id"])
+    speed_cards = get_speed_cards("drop")
 
     return ui.nav_panel(
         "Phone Drop Test Data",
-        ui.layout_columns(
-            ui.card(
-                ui.card_header("Filters"),
-                ui.input_select(
-                    "drop_speed",
-                    "Speed (m/s)",
-                    choices=speeds,
-                    selected=_default_choice(speeds, "6"),
+        ui.card(
+            ui.card_header("Filters"),
+            ui.layout_columns(
+                ui.div(
+                    ui.h6("Phones"),
+                    ui.input_checkbox_group(
+                        "drop_phones",
+                        "",
+                        choices=phone_ids,
+                        selected=phone_ids,
+                        inline=True,
+                    ),
                 ),
-                ui.input_select(
-                    "drop_config",
-                    "Config",
-                    choices=configs,
-                    selected=_default_choice(configs, "nYR"),
+                ui.div(
+                    ui.input_action_button(
+                        "update_drop_plots",
+                        "Update Plots",
+                        class_="btn-primary w-100",
+                        style="margin-top: 24px;",
+                    ),
                 ),
-                ui.input_select(
-                    "drop_repeat",
-                    "Repeat",
-                    choices=repeats,
-                    selected=_default_choice(repeats, "1"),
-                ),
-                ui.input_select(
-                    "drop_phone",
-                    "Phone ID",
-                    choices=_phone_choices(),
-                    selected="All",
-                ),
-                fill=False,
+                col_widths=[10, 2],
             ),
+            fill=False,
+        ),
+        ui.layout_columns(*speed_cards, fill=False),
+        ui.layout_columns(
             ui.card(
                 ui.card_header("Processing Metadata"),
                 ui.output_data_frame("drop_metadata_table"),
@@ -181,43 +130,43 @@ def _component_card(title: str, output_id: str):
     )
 
 
-def _matching_rows(speed: str, config: str, repeat: str, phone: str) -> pd.DataFrame:
-    df = DATA_COLLECTION_LOG.copy()
-    if df.empty:
-        return df
-
-    mask = df["config"] == config
-    if speed != "All":
-        mask &= df["target_speed_mps"] == str(speed)
-    if repeat != "All":
-        mask &= df["repeat"] == str(repeat)
-    if phone != "All":
-        mask &= df["phone_id"] == phone
-
-    def _sort_key(col):
-        if col.name in ["target_speed_mps", "repeat"]:
-            return pd.to_numeric(col, errors="coerce")
-        return col
-
-    return df[mask].sort_values(
-        ["target_speed_mps", "repeat", "phone_id"],
-        key=_sort_key,
+def _phone_sample_path(speed: str | int, config: str, repeat: str | int, phone_id: str) -> Path | None:
+    if DROP_INDEX.empty:
+        return None
+    
+    # Cast incoming UI strings to match the dataframe's native integers
+    mask = (
+        (DROP_INDEX["target_speed_mps"] == int(speed)) &
+        (DROP_INDEX["config"] == config) &
+        (DROP_INDEX["repeat"] == int(repeat)) &
+        (DROP_INDEX["phone_id"] == phone_id) &
+        (DROP_INDEX["data"] == "framed")  # Matches your pipeline's string 'data_type'
     )
+    res = DROP_INDEX[mask]["path"]
+    if not res.empty:
+        return DATA_DIR / res.iloc[0]
+    return None
 
 
-def _phone_sample_path(speed: str, config: str, repeat: str, phone_id: str) -> Path:
-    return PHONE_FRAMED_DIR / f"{speed}mps_{config}_REPEAT{repeat}_{phone_id}_framed.parquet"
+def _reference_sample_path(speed: str, config: str, repeat: str, phone_id: str) -> Path | None:
+    if DROP_INDEX.empty:
+        return None
 
-
-def _reference_sample_path(speed: str, config: str, repeat: str, phone_id: str) -> Path:
-    return (
-        REFERENCE_DIR
-        / f"{speed}mps_{config}_REPEAT{repeat}_Headform_Transformed_{phone_id}.parquet"
+    mask = (
+        (DROP_INDEX["target_speed_mps_str"] == str(speed)) &
+        (DROP_INDEX["config"] == config) &
+        (DROP_INDEX["repeat_str"] == str(repeat)) &
+        (DROP_INDEX["phone_id"] == phone_id) &
+        (DROP_INDEX["data"] == "reference")
     )
+    res = DROP_INDEX[mask]["path"]
+    if not res.empty:
+        return DATA_DIR / res.iloc[0]
+    return None
 
 
-def _read_sample(path: Path, source: str, phone_id: str) -> pd.DataFrame:
-    if not path.exists():
+def _read_sample(path: Path | None, source: str, phone_id: str) -> pd.DataFrame:
+    if path is None or not path.exists():
         return pd.DataFrame()
 
     df = pd.read_parquet(path)
@@ -266,61 +215,10 @@ def _plot_component(df: pd.DataFrame, column: str):
 
 
 def register_phone_drop_test_server(input, output, session):
-    @reactive.effect
-    def _update_repeat_choices():
-        df = DATA_COLLECTION_LOG
-        if df.empty:
-            return
-
-        speed = input.drop_speed()
-        config = input.drop_config()
-
-        mask = df["config"] == config
-        if speed != "All":
-            mask &= df["target_speed_mps"] == str(speed)
-
-        matching = df[mask]
-        repeats = ["All"] + _sort_numeric_strings(matching["repeat"])
-        current = input.drop_repeat()
-        ui.update_select(
-            "drop_repeat",
-            choices=repeats,
-            selected=current if current in repeats else _default_choice(repeats, "1"),
-        )
-
-    @reactive.effect
-    def _update_phone_choices():
-        df = DATA_COLLECTION_LOG
-        if df.empty:
-            return
-
-        speed = input.drop_speed()
-        config = input.drop_config()
-        repeat = input.drop_repeat()
-
-        mask = df["config"] == config
-        if speed != "All":
-            mask &= df["target_speed_mps"] == str(speed)
-        if repeat != "All":
-            mask &= df["repeat"] == str(repeat)
-
-        matching = df[mask]
-        phones = ["All"] + _sorted_strings(matching["phone_id"])
-        current = input.drop_phone()
-        ui.update_select(
-            "drop_phone",
-            choices=phones,
-            selected=current if current in phones else "All",
-        )
-
     @reactive.calc
+    @reactive.event(input.update_drop_plots, ignore_none=False)
     def filtered_log():
-        return _matching_rows(
-            input.drop_speed(),
-            input.drop_config(),
-            input.drop_repeat(),
-            input.drop_phone(),
-        )
+        return filter_log_by_input(input, "drop", "drop_phones")
 
     @reactive.calc
     def drop_test_data():
@@ -329,9 +227,9 @@ def register_phone_drop_test_server(input, output, session):
 
         for row in rows.itertuples(index=False):
             phone_id = row.phone_id
-            speed = row.target_speed_mps
+            speed = row.target_speed_mps_str
             config = row.config
-            repeat = row.repeat
+            repeat = row.repeat_str
 
             phone_data = _read_sample(
                 _phone_sample_path(speed, config, repeat, phone_id),
@@ -355,7 +253,6 @@ def register_phone_drop_test_server(input, output, session):
     def drop_metadata_table():
         columns = [
             "Date",
-            "Test_Name",
             "phone_id",
             "config",
             "target_speed_mps",
