@@ -45,7 +45,21 @@ def sort_numeric_strings(values: pd.Series) -> list[str]:
 def sorted_strings(values: pd.Series) -> list[str]:
     return sorted(values.dropna().astype(str).unique().tolist())
 
-def get_speed_cards(id_prefix: str, selected_speed: str = "6"):
+def get_phone_card(id_prefix: str):
+    """Generates a checkbox group card for phone selection."""
+    phone_ids = sorted_strings(DROP_INDEX["phone_id"])
+    return ui.card(
+        ui.card_header("Select Phone(s)"),
+        ui.input_checkbox_group(
+            f"{id_prefix}_phone_id",
+            "",
+            choices=phone_ids,
+            selected=phone_ids[:1],
+        ),
+        fill=False,
+    )
+
+def get_speed_cards(id_prefix: str):
     """Generates the checkbox cards for each target speed."""
     unique_drops = get_unique_drops()
     if unique_drops.empty:
@@ -70,7 +84,7 @@ def get_speed_cards(id_prefix: str, selected_speed: str = "6"):
                     f"{id_prefix}_choices_{speed}",
                     "",
                     choices=choices,
-                    selected=list(choices.keys())[:1] if speed == selected_speed else [],
+                    selected=list(choices.keys()),
                 ),
                 fill=False,
             )

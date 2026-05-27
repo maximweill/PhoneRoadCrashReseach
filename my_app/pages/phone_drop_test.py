@@ -9,114 +9,110 @@ from .standard_filter import (
     DROP_INDEX,
     DATA_DIR,
     filter_log_by_input,
+    get_phone_card,
     get_speed_cards,
     get_unique_drops,
     sort_numeric_strings,
     sorted_strings,
 )
 
+DATA_COLLECTION_LOG_PATH = DATA_DIR / "lookup_tables_parquet" / "data_collection_log.parquet"
+
 TIME_COLUMN = "Time (s)"
 SUMMARY_PLOT_HEIGHT = "100%"
 COMPONENT_PLOT_HEIGHT = "100%"
 
+def load_data_collection_log() -> pd.DataFrame:
+    if not DATA_COLLECTION_LOG_PATH.exists():
+        return pd.DataFrame()
+    df = pd.read_parquet(DATA_COLLECTION_LOG_PATH)
+    # Ensure types match for merging
+    df["target_speed_mps_str"] = df["target_speed_mps"].astype(str)
+    df["repeat_str"] = df["repeat"].astype(str)
+    return df
+
+DATA_COLLECTION_LOG = load_data_collection_log()
 
 def phone_drop_test_page():
     unique_drops = get_unique_drops()
     if unique_drops.empty:
         return ui.nav_panel("Phone Drop Test Data", ui.p("No data available"))
 
-    phone_ids = sorted_strings(unique_drops["phone_id"])
     speed_cards = get_speed_cards("drop")
 
     return ui.nav_panel(
         "Phone Drop Test Data",
-        ui.card(
-            ui.card_header("Filters"),
-            ui.layout_columns(
-                ui.div(
-                    ui.h6("Phones"),
-                    ui.input_checkbox_group(
-                        "drop_phones",
-                        "",
-                        choices=phone_ids,
-                        selected=phone_ids,
-                        inline=True,
-                    ),
+        ui.layout_sidebar(
+            ui.sidebar(
+                ui.input_action_button(
+                    "update_drop_plots",
+                    "Update Plots",
+                    class_="btn-primary w-100",
                 ),
-                ui.div(
-                    ui.input_action_button(
-                        "update_drop_plots",
-                        "Update Plots",
-                        class_="btn-primary w-100",
-                        style="margin-top: 24px;",
-                    ),
-                ),
-                col_widths=[10, 2],
+                ui.hr(),
+                get_phone_card("drop"),
+                *speed_cards,
+                width=350,
             ),
-            fill=False,
-        ),
-        ui.layout_columns(*speed_cards, fill=False),
-        ui.layout_columns(
+            ui.layout_columns(
+                ui.card(
+                    ui.card_header("Accelerometer Comparison (m/s2)"),
+                    output_widget("drop_accel_plot", height=SUMMARY_PLOT_HEIGHT),
+                    full_screen=True,
+                    fill=True,
+                ),
+                ui.card(
+                    ui.card_header("Gyroscope Comparison (rad/s)"),
+                    output_widget("drop_gyro_plot", height=SUMMARY_PLOT_HEIGHT),
+                    full_screen=True,
+                    fill=True,
+                ),
+                ui.card(
+                    ui.card_header("Rotational Acceleration (rad/s2)"),
+                    output_widget("drop_rot_accel_res_plot", height=SUMMARY_PLOT_HEIGHT),
+                    full_screen=True,
+                    fill=True,
+                ),
+                fill=False,
+            ),
+            ui.accordion(
+                ui.accordion_panel(
+                    "Linear Acceleration XYZ Components",
+                    ui.layout_columns(
+                        _component_card("LinAcc X", "drop_accel_x_plot"),
+                        _component_card("LinAcc Y", "drop_accel_y_plot"),
+                        _component_card("LinAcc Z", "drop_accel_z_plot"),
+                        fill=False,
+                    ),
+                    value="drop_linear_acceleration",
+                ),
+                ui.accordion_panel(
+                    "Rotational Velocity XYZ Components",
+                    ui.layout_columns(
+                        _component_card("RotVel X", "drop_gyro_x_plot"),
+                        _component_card("RotVel Y", "drop_gyro_y_plot"),
+                        _component_card("RotVel Z", "drop_gyro_z_plot"),
+                        fill=False,
+                    ),
+                    value="drop_rotational_velocity",
+                ),
+                ui.accordion_panel(
+                    "Rotational Acceleration XYZ Components",
+                    ui.layout_columns(
+                        _component_card("RotAcc X", "drop_rotacc_x_plot"),
+                        _component_card("RotAcc Y", "drop_rotacc_y_plot"),
+                        _component_card("RotAcc Z", "drop_rotacc_z_plot"),
+                        fill=False,
+                    ),
+                    value="drop_rotational_acceleration",
+                ),
+                open=False,
+            ),
             ui.card(
                 ui.card_header("Processing Metadata"),
                 ui.output_data_frame("drop_metadata_table"),
                 fill=False,
             ),
-            fill=False,
-        ),
-        ui.layout_columns(
-            ui.card(
-                ui.card_header("Accelerometer Comparison (m/s2)"),
-                output_widget("drop_accel_plot", height=SUMMARY_PLOT_HEIGHT),
-                full_screen=True,
-                fill=True,
-            ),
-            ui.card(
-                ui.card_header("Gyroscope Comparison (rad/s)"),
-                output_widget("drop_gyro_plot", height=SUMMARY_PLOT_HEIGHT),
-                full_screen=True,
-                fill=True,
-            ),
-            ui.card(
-                ui.card_header("Rotational Acceleration (rad/s2)"),
-                output_widget("drop_rot_accel_res_plot", height=SUMMARY_PLOT_HEIGHT),
-                full_screen=True,
-                fill=True,
-            ),
-            fill=False,
-        ),
-        ui.accordion(
-            ui.accordion_panel(
-                "Linear Acceleration XYZ Components",
-                ui.layout_columns(
-                    _component_card("LinAcc X", "drop_accel_x_plot"),
-                    _component_card("LinAcc Y", "drop_accel_y_plot"),
-                    _component_card("LinAcc Z", "drop_accel_z_plot"),
-                    fill=False,
-                ),
-                value="drop_linear_acceleration",
-            ),
-            ui.accordion_panel(
-                "Rotational Velocity XYZ Components",
-                ui.layout_columns(
-                    _component_card("RotVel X", "drop_gyro_x_plot"),
-                    _component_card("RotVel Y", "drop_gyro_y_plot"),
-                    _component_card("RotVel Z", "drop_gyro_z_plot"),
-                    fill=False,
-                ),
-                value="drop_rotational_velocity",
-            ),
-            ui.accordion_panel(
-                "Rotational Acceleration XYZ Components",
-                ui.layout_columns(
-                    _component_card("RotAcc X", "drop_rotacc_x_plot"),
-                    _component_card("RotAcc Y", "drop_rotacc_y_plot"),
-                    _component_card("RotAcc Z", "drop_rotacc_z_plot"),
-                    fill=False,
-                ),
-                value="drop_rotational_acceleration",
-            ),
-            open=False,
         ),
     )
 
@@ -218,7 +214,7 @@ def register_phone_drop_test_server(input, output, session):
     @reactive.calc
     @reactive.event(input.update_drop_plots, ignore_none=False)
     def filtered_log():
-        return filter_log_by_input(input, "drop", "drop_phones")
+        return filter_log_by_input(input, "drop", "drop_phone_id")
 
     @reactive.calc
     def drop_test_data():
@@ -251,6 +247,9 @@ def register_phone_drop_test_server(input, output, session):
     @output
     @render.data_frame
     def drop_metadata_table():
+        if DATA_COLLECTION_LOG.empty:
+            return render.DataTable(pd.DataFrame())
+        
         columns = [
             "Date",
             "phone_id",
@@ -261,8 +260,8 @@ def register_phone_drop_test_server(input, output, session):
             "Successful",
             "Comments",
         ]
-        available_columns = [column for column in columns if column in filtered_log().columns]
-        return render.DataTable(filtered_log()[available_columns])
+        available_columns = [column for column in columns if column in DATA_COLLECTION_LOG.columns]
+        return render.DataTable(DATA_COLLECTION_LOG[available_columns])
 
     @output
     @render_plotly

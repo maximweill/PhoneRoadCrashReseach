@@ -8,13 +8,13 @@ from shinywidgets import output_widget, render_plotly
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 PHONE_CHARACTERISTICS_PATH = (
-    DATA_DIR / "lookup_tables_parquet" / "phone_characteristics_aggregated.parquet"
+    DATA_DIR / "lookup_tables_parquet" / "characteristics" / "phone_characteristics_aggregated.parquet"
 )
 START_CHARACTERISTICS_PATH = (
-    DATA_DIR / "lookup_tables_parquet" / "start_characteristics_stationary.parquet"
+    DATA_DIR / "lookup_tables_parquet" / "characteristics" / "start_characteristics_stationary.parquet"
 )
 END_CHARACTERISTICS_PATH = (
-    DATA_DIR / "lookup_tables_parquet" / "end_characteristics_stationary.parquet"
+    DATA_DIR / "lookup_tables_parquet" / "characteristics" / "end_characteristics_stationary.parquet"
 )
 STATIONARY_INDEX_PATH = (
     DATA_DIR / "lookup_tables_parquet" / "index" / "stationary_file_index.parquet"
@@ -55,30 +55,6 @@ def tested_phone_characteristics_page():
 
     return ui.nav_panel(
         "Tested Phone Characteristics",
-        ui.card(
-            ui.card_header("Aggregated Characteristics of Tested Phones"),
-            ui.output_data_frame("phone_characteristics_table"),
-            full_screen=True,
-            min_height=TABLE_CARD_MIN_HEIGHT,
-            fill=False,
-        ),
-        ui.layout_columns(
-            ui.card(
-                ui.card_header("Start of Test Characteristics"),
-                ui.output_data_frame("start_characteristics_table"),
-                full_screen=True,
-                min_height=TABLE_CARD_MIN_HEIGHT,
-                fill=False,
-            ),
-            ui.card(
-                ui.card_header("End of Test Characteristics"),
-                ui.output_data_frame("end_characteristics_table"),
-                full_screen=True,
-                min_height=TABLE_CARD_MIN_HEIGHT,
-                fill=False,
-            ),
-            fill=False,
-        ),
         ui.layout_columns(
             ui.card(
                 ui.card_header("Stationary Behavior Analysis"),
@@ -204,6 +180,30 @@ def tested_phone_characteristics_page():
                 value="gyro_end",
             ),
             open="accel_start",
+        ),
+        ui.card(
+            ui.card_header("Aggregated Characteristics of Tested Phones"),
+            ui.output_data_frame("phone_characteristics_table"),
+            full_screen=True,
+            min_height=TABLE_CARD_MIN_HEIGHT,
+            fill=False,
+        ),
+        ui.layout_columns(
+            ui.card(
+                ui.card_header("Start of Test Characteristics"),
+                ui.output_data_frame("start_characteristics_table"),
+                full_screen=True,
+                min_height=TABLE_CARD_MIN_HEIGHT,
+                fill=False,
+            ),
+            ui.card(
+                ui.card_header("End of Test Characteristics"),
+                ui.output_data_frame("end_characteristics_table"),
+                full_screen=True,
+                min_height=TABLE_CARD_MIN_HEIGHT,
+                fill=False,
+            ),
+            fill=False,
         ),
     )
 

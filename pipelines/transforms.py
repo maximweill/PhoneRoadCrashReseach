@@ -654,11 +654,10 @@ def aggregate_characteristics_by_phone(df: pd.DataFrame, ctx: Context) -> tuple[
         return df, ctx
         
     avg_metrics = ["fs_mean", "fs_median", "fs_iqr", 
-                   "battery_temp_c_mean", "battery_temp_c_median", "battery_temp_c_iqr",
-                   "initial_magX_uT", "initial_magY_uT", "initial_magZ_uT"]
+                   "battery_temp_c_mean", "battery_temp_c_median", "battery_temp_c_iqr"]
     
     # Metadata columns we want to grab the mode of
-    metadata_cols = ["Device", "Accelerometer", "Gyroscope", "Magnetometer", "Crash Date", "Crash Time", "Target Orientation"]
+    metadata_cols = ["Device", "Accelerometer", "Gyroscope", "Magnetometer", "Date"]
     
     # Sensor max columns we want the global max of
     max_cols = [c for c in df.columns if c.startswith("max_")]
@@ -952,13 +951,21 @@ def ignore_saturated(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Cont
     """
     Identifies and masks saturated sensor readings based on device-specific ranges.
     """
-    chars_path = ctx.get("characteristics_path")
-    if not chars_path or not Path(chars_path).exists():
-        print("Warning: characteristics_path not found in context. Skipping ignore_saturated.")
+    # 0. Find the characteristics file
+    # Fully rely on the drop characteristics file
+    chars_path = Path("data_processing_gitignore/phone_characteristics/aggregated/characteristics_drops.csv")
+            
+    if not chars_path.exists():
+        print(f"Warning: Characteristics file not found at {chars_path}. Skipping ignore_saturated.")
         return df, ctx
 
     # 1. Extract phone_id from filename
-    filename = ctx["input_path"].name
+    input_path = ctx.get("input_path")
+    if not input_path:
+        print("Warning: input_path not found in context. Skipping ignore_saturated.")
+        return df, ctx
+        
+    filename = input_path.name
     match = re.search(r"(Phone\d+)", filename)
     if not match:
         print(f"Warning: Could not extract Phone ID from {filename}. Skipping ignore_saturated.")
@@ -980,7 +987,7 @@ def ignore_saturated(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Cont
         print(f"Warning: Missing range data for {phone_id}. Skipping ignore_saturated.")
         return df, ctx
 
-    # 4. Define thresholds (using a 2% tolerance)
+    # 4. Define thresholds (using a 2% tolerance to account for near-saturation effects)
     acc_thresh = acc_range * 0.98
     gyro_thresh = gyro_range * 0.98
 
@@ -1042,12 +1049,17 @@ def ignore_saturated(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Cont
 
 def compute_n(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
     ctx["n"] = len(df)
+    # Also record valid sample counts for each diff column
+    for col in df:
+        if col.endswith("_diff"):
+            ctx[f"{col}_n_valid"] = int(df[col].notna().sum())
     return df, ctx
 
 def compute_mae_from_ideal(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
     for col in df:
         if col.endswith("_diff"):
-            ctx[f"{col}_mae"] = np.mean(np.abs(df[col]))
+            # pandas mean() skips NaNs by default
+            ctx[f"{col}_mae"] = df[col].abs().mean()
     return df, ctx
 
 from scipy.stats import pearsonr
@@ -1055,7 +1067,13 @@ def compute_pearson_correlation(df: pd.DataFrame, ctx: Context) -> tuple[pd.Data
     for col in df:
         if col.endswith("_diff"):
             stem = col.replace("_diff", "")
-            r, p = pearsonr(df[f"{stem}_ref"], df[f"{stem}_framed"])
+            
+            # Pairwise drop NaNs
+            valid_mask = df[f"{stem}_ref"].notna() & df[f"{stem}_framed"].notna()
+            if valid_mask.sum() < 2:
+                continue
+                
+            r, p = pearsonr(df.loc[valid_mask, f"{stem}_ref"], df.loc[valid_mask, f"{stem}_framed"])
             ctx[f"{stem}_pearson_r"] = r
             ctx[f"{stem}_pearson_p"] = p
 
@@ -1067,8 +1085,13 @@ def compute_trendline_regression(df: pd.DataFrame, ctx: Context) -> tuple[pd.Dat
         if col.endswith("_diff"):
             stem = col.replace("_diff", "")
 
-            x = df[f"{stem}_ref"]
-            y = df[f"{stem}_framed"]
+            # Pairwise drop NaNs
+            valid_mask = df[f"{stem}_ref"].notna() & df[f"{stem}_framed"].notna()
+            if valid_mask.sum() < 2:
+                continue
+
+            x = df.loc[valid_mask, f"{stem}_ref"]
+            y = df.loc[valid_mask, f"{stem}_framed"]
 
             X = sm.add_constant(x)
             model = sm.OLS(y, X).fit()
@@ -1092,22 +1115,38 @@ def compute_trendline_regression(df: pd.DataFrame, ctx: Context) -> tuple[pd.Dat
     return df, ctx
 
 import pingouin as pg
+import numpy as np
+import pandas as pd
+import warnings
+
 def compute_icc(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
 
     for col in df:
         if col.endswith("_diff"):
             stem = col.replace("_diff", "")
+            ref_col = f"{stem}_ref"
+            framed_col = f"{stem}_framed"
 
-            # --- ALIGN FIRST (critical fix) ---
-            x = df[f"{stem}_ref"].to_numpy()
-            y = df[f"{stem}_framed"].to_numpy()
-
-            n = min(len(x), len(y))
-            if n < 2:
+            # Check if columns actually exist in the DataFrame
+            if ref_col not in df.columns or framed_col not in df.columns:
+                ctx["bug"].append(f"Skipped {col}: Matching ref/framed columns not found.")
                 continue
 
-            x = x[:n]
-            y = y[:n]
+            # Pairwise drop NaNs
+            valid_mask = df[ref_col].notna() & df[framed_col].notna()
+            n = valid_mask.sum()
+            
+            if n < 2:
+                ctx["bug"].append(f"icc failed {col}: Insufficient data points (n={n}).")
+                continue
+
+            x = df.loc[valid_mask, ref_col].to_numpy()
+            y = df.loc[valid_mask, framed_col].to_numpy()
+
+            # Pre-flight check: Zero variance breaks matrix math
+            if np.var(x) == 0 and np.var(y) == 0:
+                ctx["bug"].append(f"icc failed {col}: Zero variance in signals (n={n}).")
+                continue
 
             # --- build long format ---
             data = pd.DataFrame({
@@ -1116,30 +1155,41 @@ def compute_icc(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
                 "values": np.ravel(np.column_stack([x, y]))
             })
 
-            icc_result = pg.intraclass_corr(
-                data=data,
-                targets="targets",
-                raters="raters",
-                ratings="values"
-            )
+            # Catch run-time issues safely
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                try:
+                    icc_result = pg.intraclass_corr(
+                        data=data,
+                        targets="targets",
+                        raters="raters",
+                        ratings="values"
+                    )
+                except Exception as e:
+                    ctx["bug"].append(f"icc failed {col}: Pingouin exception -> {str(e)}")
+                    continue
 
-            # --- SAFE ICC SELECTION ---
-            icc_row = icc_result[
-                icc_result["Type"].isin(["ICC2", "ICC2k"])
-            ]
+            icc_row = icc_result[icc_result["Type"].isin(["ICC(A,1)", "ICC(A,k)"])]
 
             if icc_row.empty:
-                ctx["bug"].append(f"icc failed {col}")
+                warning_msg = f" ({w[0].message})" if w else ""
+                ctx["bug"].append(f"icc failed {col}: 'ICC(A,1)'/'ICC(A,k)' missing from output{warning_msg}.")
                 continue
 
+            # 'ICC' remains the same, but 'CI95%' is now 'CI95'
             icc_value = icc_row.iloc[0]["ICC"]
-            ci95 = icc_row.iloc[0]["CI95%"]
+            ci95 = icc_row.iloc[0]["CI95"] 
+
+            if np.isnan(icc_value):
+                ctx["bug"].append(f"icc failed {col}: Result is NaN.")
+                continue
 
             ctx[f"{stem}_icc"] = icc_value
             ctx[f"{stem}_icc_ci95_lower"] = ci95[0]
             ctx[f"{stem}_icc_ci95_upper"] = ci95[1]
 
     return df, ctx
+
 
 import numpy as np
 from scipy.stats import ttest_1samp
@@ -1160,7 +1210,8 @@ def compute_bland_altman(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, 
             bias = np.mean(diff)
             sd = np.std(diff)
 
-            t_stat, p = ttest_1samp(df[col], 0)
+            # Use the already dropped-nan diff for the t-test
+            t_stat, p = ttest_1samp(diff, 0)
             ctx[f"{col}_bias_t_stat"] = t_stat
             ctx[f"{col}_bias_p"] = p
 
