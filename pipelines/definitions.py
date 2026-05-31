@@ -44,7 +44,7 @@ CONTINUOUS_PHONE_PIPELINE = Pipeline(
         sort_by_time,
         convert_units,
     ],
-    saver=save_split_by_trigger,
+    saver=save_split_by_triggered,
 )
 
 FRAMED_RESAMPLING_PIPELINE = Pipeline(
@@ -70,6 +70,17 @@ PHONE_DROP_FRAMING_PIPELINE = Pipeline(
     saver=save_single_csv,
 )
 
+
+REFERENCE_PARSING_PIPELINE = Pipeline(
+    name="reference_parsing",
+    loader=load_excel,
+    transforms=[
+        normalize_column_names,
+        resample_reference,
+        trim_reference
+    ],
+    saver=save_single_csv,
+)
 #
 #CORRELATIONS
 #
@@ -99,7 +110,7 @@ CORRELATION_PARAMETERS = Pipeline(
     saver=null_saver,
 )
 #
-#Beans
+#STATIONARY
 #
 STATIONARY_PARSING_PIPELINE = Pipeline(
     name="stationary",
@@ -131,62 +142,85 @@ STATIONARY_PARSING_PIPELINE_BOTH = Pipeline(
     saver=partial(save_stationary,both=True),
 )
 
+
+#LOOKUP
+
 LOG_CLEANING_PIPELINE = Pipeline(
     name="log_cleaning",
     loader=load_raw_log_csv,
     transforms=[
+        normalize_log_columns,
+
         drop_failed_rows,
         drop_empty_rows,
-        normalize_log_columns,
+        
+        combined_time,
         extract_phone_id,
+        drop_headform,
+
         parse_test_metadata,
         extract_repeat_from_test_name,
         clean_speed_column,
-        rename_continuous_test_files,
+        partial(rename_continuous_test_files,add_trigger0=False),
     ],
     saver=save_single_csv,
 )
 
-
-REFERENCE_PARSING_PIPELINE = Pipeline(
-    name="reference_parsing",
-    loader=load_excel,
+CALIBRATION_LOG_CLEANING_PIPELINE = Pipeline(
+    name="calib_log_cleaning",
+    loader=load_raw_log_csv,
     transforms=[
-        normalize_column_names,
-        resample_reference,
-        trim_reference
+        normalize_log_columns,
+
+        drop_failed_rows,
+        drop_empty_rows,
+
+        combined_time,
+        extract_phone_id,
+        drop_headform,
+
+        parse_test_metadata,
+        extract_repeat_from_test_name,
+        clean_speed_column,
+        partial(rename_continuous_test_files,add_trigger0=True),
+
+        drop_no_calibration,
     ],
     saver=save_single_csv,
 )
+
+
 
 #CONTINUOUS EXTRACTION
 
-EXTRACT_DROPS_PIPELINE = Pipeline(
-    name="extract_drops",
+EXTRACT_CONTINUOUS_PIPELINE = Pipeline(
+    name="extract_continous",
     loader=load_csv,
     transforms=[
         normalize_time_column,
         ensure_sensor_columns,
         sort_by_time,
         convert_units,
-        remove_accidental_triggers,
-        extract_drops,
+        get_block_indices,
+        filter_blocks_by_duration,
+        nudge_blocks,
+        recalc_triggered_by_blocks,
+        drop_nan,
+
+        axis_column,
     ],
-    saver=save_split_by_trigger,
+    saver=save_split_by_triggered,
 )
 
-EXTRACT_CALIBRATION_PIPELINE = Pipeline(
-    name="extract_calibration",
+FRAME_CALIBRATION_PIPELINE = Pipeline(
+    name="frame_calibration",
     loader=load_csv,
     transforms=[
-        normalize_time_column,
-        ensure_sensor_columns,
-        sort_by_time,
-        convert_units,
-        remove_accidental_triggers,
-        extract_calibration,
+        drop_motion,
+        choose_axis_group,
+        drop_nan,
     ],
-    saver=save_split_by_trigger,
+    saver=save_single_csv,
 )
 
 
@@ -215,6 +249,16 @@ CHARACTERISTICS_AGGREGATION_PIPELINE = Pipeline(
     saver=save_single_csv,
 )
 
+CALIBRATION_PARAMETERS_PIPELINE = Pipeline(
+    name="calibration_parameters",
+    loader=load_csv,
+    transforms=[
+        compute_6axis_calibration,
+        create_calibration_summary,
+    ],
+    saver=null_saver,
+)
+
 #ALLAN ------------------
 
 
@@ -234,4 +278,25 @@ ALLAN_VARIANCE_PIPELINE = Pipeline(
         calculate_allan_variance_transform,
     ],
     saver=save_allan_variance,
+)
+
+
+# PSD ------------------
+
+POWER_SPECTRAL_DENSITY_PIPELINE_BOTH = Pipeline(
+    name="power_spectral_density",
+    loader=load_csv,
+    transforms=[
+        partial(calculate_psd_transform, both=True),
+    ],
+    saver=save_psd,
+)
+
+POWER_SPECTRAL_DENSITY_PIPELINE = Pipeline(
+    name="power_spectral_density",
+    loader=load_csv,
+    transforms=[
+        calculate_psd_transform,
+    ],
+    saver=save_psd,
 )

@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Callable
 import pandas as pd 
 import concurrent.futures
+import shutil
 
 # =========================================================
 # TYPES
@@ -82,7 +83,8 @@ def run_directory(
     print(f"--------{src_dir}-------")
     contexts: list[Context] = []
 
-    files = list(src_dir.glob(extension))
+    files = list(src_dir.rglob(extension))
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     for i, file in enumerate(files):
         print(f"{i}/{len(files)}: Processing {file.name}")
@@ -111,7 +113,8 @@ def run_directory_parallel(
 ) -> pd.DataFrame:
 
     print(f"--------{src_dir}-------")
-    files = list(src_dir.glob(extension))
+    files = list(src_dir.rglob(extension))
+    output_dir.mkdir(parents=True, exist_ok=True)
     print(f"Found {len(files)} files. Starting parallel processing...")
 
     # 1. Package the arguments for the workers

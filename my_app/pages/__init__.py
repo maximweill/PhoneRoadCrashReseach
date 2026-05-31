@@ -3,6 +3,10 @@ from my_app.pages.phone_drop_test import (
     phone_drop_test_page,
     register_phone_drop_test_server,
 )
+from my_app.pages.calibration_tests import (
+    calibration_tests_page,
+    register_calibration_tests_server,
+)
 from my_app.pages.sensor_abilities import (
     register_sensor_abilities_server,
     sensor_abilities_page,
@@ -25,6 +29,8 @@ __all__ = [
     "home_page",
     "phone_drop_test_page",
     "register_phone_drop_test_server",
+    "calibration_tests_page",
+    "register_calibration_tests_server",
     "register_sensor_abilities_server",
     "sensor_abilities_page",
     "register_sensor_correlation_server",

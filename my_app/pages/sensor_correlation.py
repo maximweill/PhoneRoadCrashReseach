@@ -7,7 +7,7 @@ from shiny import ui, reactive, render
 from shinywidgets import output_widget, render_plotly
 import re
 
-from .standard_filter import get_phone_card, get_speed_cards, filter_log_by_input, sorted_strings, DROP_INDEX
+from .standard_filter import get_drop_index_filters, filter_drop_index_by_input, sorted_strings, DROP_INDEX
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 AGREEMENT_PATH = DATA_DIR / "phone_drop_test_data_parquet" / "agreement" / "agreement.parquet"
@@ -40,8 +40,11 @@ def load_processed_agreement() -> pd.DataFrame:
     return df
 
 AGREEMENT_DF = load_processed_agreement()
+
 def sensor_correlation_page():
-    
+
+    sidebar_cards = get_drop_index_filters("corr")
+
     return ui.nav_panel(
         "Sensor Correlation",
         ui.layout_sidebar(
@@ -52,7 +55,7 @@ def sensor_correlation_page():
                     class_="btn-primary w-100",
                 ),
                 ui.hr(),
-                get_phone_card("corr"),
+                sidebar_cards[0], # Phone card
                 ui.input_select(
                     "corr_sensor",
                     "Select Sensor",
@@ -66,7 +69,7 @@ def sensor_correlation_page():
                     selected="Scatter",
                     inline=True,
                 ),
-                *get_speed_cards("corr"),
+                *sidebar_cards[1:], # Speed cards
                 width=350,
             ),
             # --- CARDS 2 & 3: Grouped Plots side-by-side (or stacked when long) ---
@@ -101,7 +104,7 @@ def register_sensor_correlation_server(input, output, session):
     @reactive.event(input.update_corr_plots, ignore_none=False)
     def gated_params():
         return {
-            "drops": filter_log_by_input(input, "corr", "corr_phone_id"),
+            "drops": filter_drop_index_by_input(input, "corr", "corr_phone_id"),
             "sensor": input.corr_sensor(),
             "plot_type": input.corr_plot_type(),
         }

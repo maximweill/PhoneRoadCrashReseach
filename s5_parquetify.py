@@ -2,7 +2,7 @@ import pandas as pd
 from pathlib import Path
 from typing import Optional, Union
 
-def convert_csv_to_parquet(csv_file: Path, pq_file: Path, downsample: int = 1, nrows: Optional[int] = None) -> None:
+def convert_csv_to_parquet(csv_file: Path, pq_file: Path, downsample: int = 1, nrows: Optional[int] = None, max_duplicates:Optional[dict[str,int]] = None) -> None:
     """
     Converts a single CSV file to Parquet format.
     """
@@ -13,7 +13,11 @@ def convert_csv_to_parquet(csv_file: Path, pq_file: Path, downsample: int = 1, n
             engine="c",
             nrows=nrows
         )
-            
+        df = df.sort_index()
+        if not(max_duplicates is None):
+            for col, number in max_duplicates.items():
+                df = df.groupby(col, as_index=False, sort=False).head(number)
+
         # Simple downsampling if requested
         if downsample > 1:
             df = df.iloc[::downsample, :].reset_index(drop=True)
@@ -29,7 +33,8 @@ def convert_csv_dir_to_parquet(
     output_dir: Union[str, Path], 
     downsample: int = 1, 
     nrows: Optional[int] = None,
-    rename_map: Optional[dict] = None
+    rename_map: Optional[dict] = None,
+    max_duplicates:Optional[dict[str,int]] = None
 ) -> None:
     """
     Converts all CSV files in a directory to Parquet format.
@@ -58,7 +63,13 @@ def convert_csv_dir_to_parquet(
                 new_name += ".parquet"
         
         pq_file = dest_path / new_name
-        convert_csv_to_parquet(csv_file, pq_file, downsample=downsample, nrows=nrows)
+        convert_csv_to_parquet(
+            csv_file,
+            pq_file,
+            downsample=downsample,
+            nrows=nrows,
+            max_duplicates=max_duplicates
+        )
 
 
 
@@ -66,20 +77,13 @@ DATA_DIR = Path("data_processing_gitignore")
 WEBAPP_DATA_DIR = Path("my_app/data")
 LOGS_DEST = WEBAPP_DATA_DIR / "lookup_tables_parquet"
 if __name__ == "__main__":
-    # Base directories
+    # # Base directories
     # 1. Car Crash Data
     convert_csv_dir_to_parquet(
         source_dir=DATA_DIR / "car_crash_data" / "parsed",
         output_dir=WEBAPP_DATA_DIR / "car_crash_data_parquet"
     )
 
-
-    # Logs from lookup_tables
-    convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "lookup_tables",
-        output_dir=LOGS_DEST,
-        rename_map={"data_collection_log(Maxim Tests).csv": "data_collection_log.parquet"}
-    )
     
     # Aggregated characteristics
     convert_csv_dir_to_parquet(
@@ -91,25 +95,26 @@ if __name__ == "__main__":
     # 3. Phone Drop Test Data - Reference Signals
     convert_csv_dir_to_parquet(
         source_dir=DATA_DIR / "phone_drop_test_data" / "reference",
-        output_dir=WEBAPP_DATA_DIR / "phone_drop_test_data_parquet" / "phone_reference_signals"
+        output_dir=WEBAPP_DATA_DIR / "phone_drop_test_data_parquet" / "phone_reference_signals",
     )
-    
-    # 4. Phone Drop Test Data - Framed
+    # # 4. Phone Drop Test Data - Framed
     convert_csv_dir_to_parquet(
         source_dir=DATA_DIR / "phone_drop_test_data" / "framed", 
-        output_dir=WEBAPP_DATA_DIR / "phone_drop_test_data_parquet" / "phone_framed"
+        output_dir=WEBAPP_DATA_DIR / "phone_drop_test_data_parquet" / "phone_framed",
     )
     convert_csv_dir_to_parquet(
         source_dir=DATA_DIR / "phone_drop_test_data" / "correlation", 
-        output_dir=WEBAPP_DATA_DIR / "phone_drop_test_data_parquet" / "correlation"
+        output_dir=WEBAPP_DATA_DIR / "phone_drop_test_data_parquet" / "correlation",
+        downsample=10
     )
     convert_csv_dir_to_parquet(
         source_dir=DATA_DIR / "phone_drop_test_data" / "agreement", 
-        output_dir=WEBAPP_DATA_DIR / "phone_drop_test_data_parquet" / "agreement"
+        output_dir=WEBAPP_DATA_DIR / "phone_drop_test_data_parquet" / "agreement",
+        downsample=10
     )
 
 
-    # 5. Stationary Data start
+    # # 5. Stationary Data start
     convert_csv_dir_to_parquet(
         source_dir=DATA_DIR / "stationary" / "start" / "parsed",
         output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "start" / "parsed",
@@ -117,7 +122,13 @@ if __name__ == "__main__":
     )
     convert_csv_dir_to_parquet(
         source_dir=DATA_DIR / "stationary"/ "start" / "allan_variance",
-        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "start" / "allan_variance"
+        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "start" / "allan_variance",
+        downsample=2
+    )
+    convert_csv_dir_to_parquet(
+        source_dir=DATA_DIR / "stationary"/ "start" / "power_spectral_density",
+        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "start" / "power_spectral_density",
+        downsample=10
     )
 
     # 6. Stationary Data end
@@ -128,12 +139,23 @@ if __name__ == "__main__":
     )
     convert_csv_dir_to_parquet(
         source_dir=DATA_DIR / "stationary"/ "end" / "allan_variance",
-        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end" / "allan_variance"
+        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end" / "allan_variance",
+        downsample=2
+    )
+    convert_csv_dir_to_parquet(
+        source_dir=DATA_DIR / "stationary"/ "end"/ "power_spectral_density",
+        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end" / "power_spectral_density",
+        downsample=10
     )
 
     # 7. 6-Axis Calibration
     convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "6axis_calibaration" / "parsed",
-        output_dir=WEBAPP_DATA_DIR / "6axis_calibaration_parquet"
+        source_dir=DATA_DIR / "6axis_calibration" / "framed",
+        output_dir=WEBAPP_DATA_DIR / "6axis_calibration" / "framed",
+        max_duplicates={"axis":20}
+    )
+    convert_csv_dir_to_parquet(
+        source_dir=DATA_DIR / "6axis_calibration" / "calibration",
+        output_dir=WEBAPP_DATA_DIR / "6axis_calibration" / "calibration",
     )
 

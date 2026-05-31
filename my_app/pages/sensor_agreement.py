@@ -7,7 +7,7 @@ from shiny import ui, reactive, render
 from shinywidgets import output_widget, render_plotly
 import re
 
-from .standard_filter import get_phone_card, get_speed_cards, filter_log_by_input, sorted_strings, DROP_INDEX
+from .standard_filter import get_drop_index_filters, filter_drop_index_by_input, sorted_strings, DROP_INDEX
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 AGREEMENT_PATH = DATA_DIR / "phone_drop_test_data_parquet" / "agreement" / "agreement.parquet"
@@ -42,6 +42,8 @@ AGREEMENT_DF = load_processed_agreement()
 
 def sensor_agreement_page():
     
+    sidebar_cards = get_drop_index_filters("agree")
+
     return ui.nav_panel(
         "Sensor Agreement",
         ui.layout_sidebar(
@@ -52,8 +54,7 @@ def sensor_agreement_page():
                     class_="btn-primary w-100",
                 ),
                 ui.hr(),
-                get_phone_card("agree"),
-                *get_speed_cards("agree"),
+                *sidebar_cards,
                 width=350,
             ),
             # --- Plot Section ---
@@ -90,7 +91,7 @@ def register_sensor_agreement_server(input, output, session):
     @reactive.calc
     @reactive.event(input.update_agree_plots, ignore_none=False)
     def selected_drops():
-        return filter_log_by_input(input, "agree", "agree_phone_id")
+        return filter_drop_index_by_input(input, "agree", "agree_phone_id")
 
     @reactive.calc
     def filtered_data():

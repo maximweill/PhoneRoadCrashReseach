@@ -289,7 +289,7 @@ PHONE_VECTORS = {
 }
 
 # --- Coordinate Frame Rotation: Head CG -> Phone ---
-# All four phones are assumed to share the same orientation
+# All four phones are assumed to share the same axis
 # relative to the headform coordinate frame:
 #   phone_x = -head_y
 #   phone_y = -head_x

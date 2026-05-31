@@ -34,6 +34,23 @@ def _compute_allan_variance(data: np.ndarray, dt: float) -> tuple[np.ndarray, np
     return taus, np.array(sigmas)
 
 # =========================================================
+# PSD HELPERS
+# =========================================================
+
+def _compute_psd(data: np.ndarray, fs: float) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Calculates the Power Spectral Density of a signal using Welch's method.
+    """
+    from scipy.signal import welch
+    
+    # nperseg should be chosen based on the length of the data and desired frequency resolution
+    # A common default or 1024/2048 is often used, but we can also use a fraction of the data length.
+    nperseg = min(len(data), 2048)
+    freqs, psd = welch(data, fs=fs, nperseg=nperseg)
+    
+    return freqs, psd
+
+# =========================================================
 # CONVENTION HELPERS
 # =========================================================
 

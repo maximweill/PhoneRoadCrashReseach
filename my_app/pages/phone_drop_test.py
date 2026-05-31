@@ -8,37 +8,23 @@ from shinywidgets import output_widget, render_plotly
 from .standard_filter import (
     DROP_INDEX,
     DATA_DIR,
-    filter_log_by_input,
-    get_phone_card,
-    get_speed_cards,
+    filter_drop_index_by_input,
+    get_drop_index_filters,
     get_unique_drops,
     sort_numeric_strings,
     sorted_strings,
 )
 
-DATA_COLLECTION_LOG_PATH = DATA_DIR / "lookup_tables_parquet" / "data_collection_log.parquet"
-
 TIME_COLUMN = "Time (s)"
 SUMMARY_PLOT_HEIGHT = "100%"
 COMPONENT_PLOT_HEIGHT = "100%"
-
-def load_data_collection_log() -> pd.DataFrame:
-    if not DATA_COLLECTION_LOG_PATH.exists():
-        return pd.DataFrame()
-    df = pd.read_parquet(DATA_COLLECTION_LOG_PATH)
-    # Ensure types match for merging
-    df["target_speed_mps_str"] = df["target_speed_mps"].astype(str)
-    df["repeat_str"] = df["repeat"].astype(str)
-    return df
-
-DATA_COLLECTION_LOG = load_data_collection_log()
 
 def phone_drop_test_page():
     unique_drops = get_unique_drops()
     if unique_drops.empty:
         return ui.nav_panel("Phone Drop Test Data", ui.p("No data available"))
 
-    speed_cards = get_speed_cards("drop")
+    sidebar_cards = get_drop_index_filters("drop")
 
     return ui.nav_panel(
         "Phone Drop Test Data",
@@ -50,8 +36,7 @@ def phone_drop_test_page():
                     class_="btn-primary w-100",
                 ),
                 ui.hr(),
-                get_phone_card("drop"),
-                *speed_cards,
+                *sidebar_cards,
                 width=350,
             ),
             ui.layout_columns(
@@ -136,7 +121,7 @@ def _phone_sample_path(speed: str | int, config: str, repeat: str | int, phone_i
         (DROP_INDEX["config"] == config) &
         (DROP_INDEX["repeat"] == int(repeat)) &
         (DROP_INDEX["phone_id"] == phone_id) &
-        (DROP_INDEX["data"] == "framed")  # Matches your pipeline's string 'data_type'
+        (DROP_INDEX["data_type"] == "framed")  # Matches your pipeline's string 'data_type'
     )
     res = DROP_INDEX[mask]["path"]
     if not res.empty:
@@ -153,7 +138,7 @@ def _reference_sample_path(speed: str, config: str, repeat: str, phone_id: str) 
         (DROP_INDEX["config"] == config) &
         (DROP_INDEX["repeat_str"] == str(repeat)) &
         (DROP_INDEX["phone_id"] == phone_id) &
-        (DROP_INDEX["data"] == "reference")
+        (DROP_INDEX["data_type"] == "reference")
     )
     res = DROP_INDEX[mask]["path"]
     if not res.empty:
@@ -213,12 +198,12 @@ def _plot_component(df: pd.DataFrame, column: str):
 def register_phone_drop_test_server(input, output, session):
     @reactive.calc
     @reactive.event(input.update_drop_plots, ignore_none=False)
-    def filtered_log():
-        return filter_log_by_input(input, "drop", "drop_phone_id")
+    def filtered_drop_index():
+        return filter_drop_index_by_input(input, "drop", "drop_phone_id")
 
     @reactive.calc
     def drop_test_data():
-        rows = filtered_log()
+        rows = filtered_drop_index()
         frames = []
 
         for row in rows.itertuples(index=False):
@@ -247,21 +232,25 @@ def register_phone_drop_test_server(input, output, session):
     @output
     @render.data_frame
     def drop_metadata_table():
-        if DATA_COLLECTION_LOG.empty:
+        df = filtered_drop_index()
+        if df.empty:
             return render.DataTable(pd.DataFrame())
         
+        # Deduplicate to show one row per phone per test (ignoring data_type)
+        df_display = df.drop_duplicates(subset=["phone_id", "config", "target_speed_mps", "repeat"])
+        
         columns = [
-            "Date",
+            "test_name",
             "phone_id",
             "config",
             "target_speed_mps",
             "repeat",
             "measured_speed_mps",
             "Successful",
-            "Comments",
+            "comments",
         ]
-        available_columns = [column for column in columns if column in DATA_COLLECTION_LOG.columns]
-        return render.DataTable(DATA_COLLECTION_LOG[available_columns])
+        available_columns = [column for column in columns if column in df_display.columns]
+        return render.DataTable(df_display[available_columns])
 
     @output
     @render_plotly

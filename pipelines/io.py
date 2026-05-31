@@ -10,6 +10,8 @@ import pandas as pd
 import re
 from datetime import datetime
 
+pd.set_option("display.max_columns", None)
+
 def parse_file_date(input_path:Path)->dict:
     filename = input_path.stem  # e.g., 'crash_data_20260313_165424__Phone003'
     
@@ -35,6 +37,7 @@ def parse_file_date(input_path:Path)->dict:
 def load_csv(input_path: Path, context: Context):
     # Initialize the metadata dictionary
     metadata = {}
+
     
     # Read the file line by line to extract comments/metadata
     with open(input_path, "r", encoding="utf-8") as f:
@@ -51,6 +54,17 @@ def load_csv(input_path: Path, context: Context):
 
     if "Date" not in metadata:
         metadata.update(parse_file_date(input_path=input_path))
+    if "log_row" in context:
+        if "global_time" in context["log_row"]:
+            global_time = context["log_row"]["global_time"]
+            global_time = pd.to_datetime(global_time)
+
+            # pandas.Timestamp already supports .date() and .time()
+            context["global_time"] = global_time
+
+            metadata["Date"] = global_time.date()
+            metadata["Time"] = global_time.time()
+
 
     # Load the dataframe using the 'c' engine as before
     df = pd.read_csv(
@@ -142,10 +156,7 @@ def save_single_csv(df: pd.DataFrame, context: Context) -> list[Path]:
 
 
 
-def save_split_by_trigger(df: pd.DataFrame, context: Context) -> list[Path]:
-
-    if "trigger" not in df.columns:
-        raise ValueError("Missing trigger column")
+def save_split_by_triggered(df: pd.DataFrame, context: Context) -> list[Path]:
 
     output_dir: Path = context["output_dir"]
     input_path: Path = context["input_path"]
@@ -154,9 +165,9 @@ def save_split_by_trigger(df: pd.DataFrame, context: Context) -> list[Path]:
 
     outputs: list[Path] = []
 
-    for trig in sorted(df["trigger"].unique()):
+    for trig in sorted(df["triggered"].unique()):
 
-        sub = df[df["trigger"] == trig].reset_index(drop=True)
+        sub = df[df["triggered"] == trig].reset_index(drop=True)
 
         out = output_dir / f"{input_path.stem}_trigger{trig}.csv"
         context["output_path"] = out
@@ -202,6 +213,25 @@ def save_allan_variance(df: pd.DataFrame, context: Context) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     
     out_name = f"{input_path.stem}_allan.csv"
+    out_path = output_dir / out_name
+
+    context["output_path"]=out_path
+
+    return save_single_csv(df,context)
+
+def save_psd(df: pd.DataFrame, context: Context) -> list[Path]:
+    """
+    Saves the PSD results with a '_psd.csv' suffix.
+    """
+    if df is None:
+        return []
+        
+    output_dir: Path = context["output_dir"]
+    input_path: Path = context["input_path"]
+    
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    out_name = f"{input_path.stem}_psd.csv"
     out_path = output_dir / out_name
 
     context["output_path"]=out_path

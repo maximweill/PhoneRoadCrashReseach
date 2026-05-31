@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -16,22 +17,53 @@ START_CHARACTERISTICS_PATH = (
 END_CHARACTERISTICS_PATH = (
     DATA_DIR / "lookup_tables_parquet" / "characteristics" / "end_characteristics_stationary.parquet"
 )
-STATIONARY_INDEX_PATH = (
-    DATA_DIR / "lookup_tables_parquet" / "index" / "stationary_file_index.parquet"
-)
-
 TIME_COLUMN = "Time (s)"
 ACCEL_RES_COLUMN = "LinAccRes (m/s2)"
 GYRO_RES_COLUMN = "RotVelRes (rad/s)"
 TABLE_CARD_MIN_HEIGHT = "400px"
 TRACE_PLOT_HEIGHT = "420px"
 ALLAN_PLOT_HEIGHT = "460px"
+PSD_PLOT_HEIGHT = "460px"
 
 
 def _read_stationary_index() -> pd.DataFrame:
-    if not STATIONARY_INDEX_PATH.exists():
+    stationary_dir = DATA_DIR / "stationary_parquet"
+    if not stationary_dir.exists():
         return pd.DataFrame()
-    return pd.read_parquet(STATIONARY_INDEX_PATH)
+
+    files = []
+    # Use rglob to find all parquet files in stationary_parquet
+    for p in stationary_dir.rglob("*.parquet"):
+        # p is absolute path
+        # Example: .../data/stationary_parquet/start/parsed/accel_...parquet
+        try:
+            rel_to_stationary = p.relative_to(stationary_dir)
+            parts = rel_to_stationary.parts
+            if len(parts) < 2:
+                continue
+
+            session = parts[0]  # start, end
+            data_type = parts[1]  # parsed, allan_variance, power_spectral_density
+
+            filename = p.name
+            match = re.search(r"(Phone\d+)", filename)
+            if match:
+                phone_id = match.group(1)
+                # path relative to DATA_DIR
+                rel_path = p.relative_to(DATA_DIR)
+                files.append(
+                    {
+                        "phone_id": phone_id,
+                        "session": session,
+                        "type": data_type,
+                        "file_name": filename,
+                        "path": str(rel_path.as_posix()),
+                    }
+                )
+        except ValueError:
+            continue
+
+    return pd.DataFrame(files)
 
 
 STATIONARY_INDEX = _read_stationary_index()
@@ -69,6 +101,27 @@ def tested_phone_characteristics_page():
             ui.card(
                 ui.card_header("Stationary Noise Floor"),
                 ui.output_text("stationary_stats"),
+                fill=False,
+            ),
+            fill=False,
+        ),
+        ui.layout_columns(
+            ui.card(
+                ui.card_header("Accelerometer Power Spectral Density"),
+                output_widget(
+                    "stationary_accel_psd_plot",
+                    height=PSD_PLOT_HEIGHT,
+                ),
+                full_screen=True,
+                fill=False,
+            ),
+            ui.card(
+                ui.card_header("Gyroscope Power Spectral Density"),
+                output_widget(
+                    "stationary_gyro_psd_plot",
+                    height=PSD_PLOT_HEIGHT,
+                ),
+                full_screen=True,
                 fill=False,
             ),
             fill=False,
@@ -270,6 +323,33 @@ def _load_allan_data(phone_id: str | None, sensor: str) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
+def _load_psd_data(phone_id: str | None, sensor: str) -> pd.DataFrame:
+    if not phone_id or phone_id == "None" or STATIONARY_INDEX.empty:
+        return pd.DataFrame()
+
+    mask = (STATIONARY_INDEX["phone_id"] == phone_id) & (
+        STATIONARY_INDEX["type"] == "power_spectral_density"
+    )
+
+    # Start phase: sensor_stationary_...
+    # End phase: both_stationary_...
+    start_mask = mask & (STATIONARY_INDEX["session"] == "start") & STATIONARY_INDEX["file_name"].str.startswith(sensor)
+    end_mask = mask & (STATIONARY_INDEX["session"] == "end") & STATIONARY_INDEX["file_name"].str.startswith("both")
+    
+    rows = STATIONARY_INDEX[start_mask | end_mask]
+    frames = []
+    for _, row in rows.iterrows():
+        path = DATA_DIR / row["path"]
+        if path.exists():
+            df = pd.read_parquet(path)
+            if not df.empty:
+                df["file"] = Path(row["file_name"]).stem
+                df["phase"] = row["session"].capitalize()
+                frames.append(df)
+
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
 def _empty_plot(title: str):
     return px.scatter(title=title)
 
@@ -340,6 +420,53 @@ def _allan_plot(df: pd.DataFrame, component_prefix: str, title: str):
     return fig
 
 
+def _psd_plot(df: pd.DataFrame, component_prefix: str, title: str):
+    if df.empty:
+        return _empty_plot("No PSD data")
+    if "freq_hz" not in df.columns:
+        return _empty_plot("Column not found: freq_hz")
+
+    psd_columns = [
+        column
+        for column in df.columns
+        if column.startswith(component_prefix) and column.endswith("_psd")
+    ]
+    if not psd_columns:
+        return _empty_plot(f"No {title.lower()} columns")
+
+    melted = df.melt(
+        id_vars=["freq_hz", "file", "phase"],
+        value_vars=psd_columns,
+        var_name="component",
+        value_name="psd",
+    )
+    melted["component"] = melted["component"].str.replace("_psd", "", regex=False)
+
+    # Create a unique label for the legend
+    melted["legend_label"] = melted["phase"] + " - " + melted["component"]
+
+    fig = px.line(
+        melted,
+        x="freq_hz",
+        y="psd",
+        color="legend_label",
+        line_dash="phase",
+        title=title,
+    )
+    fig.update_xaxes(type="log")
+    fig.update_yaxes(type="log")
+    fig.update_layout(
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.2,
+            xanchor="center",
+            x=0.5,
+        )
+    )
+    return fig
+
+
 def register_tested_phone_characteristics_server(input, output, session):
     @reactive.calc
     def selected_accel_start_data():
@@ -364,6 +491,14 @@ def register_tested_phone_characteristics_server(input, output, session):
     @reactive.calc
     def selected_allan_gyro_data():
         return _load_allan_data(input.stationary_phone(), "gyro")
+
+    @reactive.calc
+    def selected_psd_accel_data():
+        return _load_psd_data(input.stationary_phone(), "accel")
+
+    @reactive.calc
+    def selected_psd_gyro_data():
+        return _load_psd_data(input.stationary_phone(), "gyro")
 
     @output
     @render.data_frame
@@ -408,6 +543,25 @@ def register_tested_phone_characteristics_server(input, output, session):
             stats.append(f"Gyro End RMS: {gyr_e[GYRO_RES_COLUMN].std():.4f} rad/s")
 
         return " | ".join(stats) if stats else "No data selected."
+
+    # PSD Plots
+    @output
+    @render_plotly
+    def stationary_accel_psd_plot():
+        return _psd_plot(
+            selected_psd_accel_data(),
+            "LinAcc",
+            "Accel Power Spectral Density",
+        )
+
+    @output
+    @render_plotly
+    def stationary_gyro_psd_plot():
+        return _psd_plot(
+            selected_psd_gyro_data(),
+            "RotVel",
+            "Gyro Power Spectral Density",
+        )
 
     # Allan Plots
     @output

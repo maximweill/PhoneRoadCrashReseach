@@ -5,7 +5,7 @@ def parse_convention(name: str) -> Dict[str, Any]:
     pattern = re.compile(
         r"^(?P<speed>[\d.]+)mps_"
         r"(?P<config>.+?)_"
-        r"REPEAT(?P<repeat>\d+)_"
+        r"REPEAT(?P<repeat>-?\d+)_"
         r"(?P<rest>.+)$"
     )
 
