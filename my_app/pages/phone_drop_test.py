@@ -147,7 +147,12 @@ def _reference_sample_path(speed: str, config: str, repeat: str, phone_id: str) 
 
 
 def _read_sample(path: Path | None, source: str, phone_id: str) -> pd.DataFrame:
-    if path is None or not path.exists():
+    if path is None:
+        print(f"DEBUG: Path is None for {source} (Phone: {phone_id})")
+        return pd.DataFrame()
+        
+    if not path.exists():
+        print(f"DEBUG: File not found: {path.as_posix()}")
         return pd.DataFrame()
 
     df = pd.read_parquet(path)

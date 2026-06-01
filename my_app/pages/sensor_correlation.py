@@ -23,6 +23,7 @@ SENSOR_OPTIONS = [
 
 def load_processed_agreement() -> pd.DataFrame:
     if not AGREEMENT_PATH.exists():
+        print(f"DEBUG: Agreement file not found: {AGREEMENT_PATH.as_posix()}")
         return pd.DataFrame()
     df = pd.read_parquet(AGREEMENT_PATH)
     

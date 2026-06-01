@@ -11,6 +11,7 @@ CALIB_INDEX_PATH = DATA_DIR / "lookup_tables_parquet" / "index" / "calib_index.p
 def load_index(path: Path) -> pd.DataFrame:
     """Loads and prepares an index file for use in the UI."""
     if not path.exists():
+        print(f"DEBUG: Index file not found: {path.as_posix()}")
         return pd.DataFrame()
     
     df = pd.read_parquet(path)

@@ -219,6 +219,8 @@ def register_calibration_tests_server(input, output, session):
                 # Use global_time as global_time
                 df["global_time"] = row.global_time
                 frames.append(df)
+            else:
+                print(f"DEBUG: Calibration data file not found: {path.as_posix()}")
         
         return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 

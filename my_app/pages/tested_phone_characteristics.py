@@ -296,6 +296,8 @@ def _load_sensor_data(phone_id: str | None, sensor: str, phase: str) -> pd.DataF
                     df["file"] = Path(row["file_name"]).stem
                 df["phase"] = phase.capitalize()
                 frames.append(df)
+        else:
+            print(f"DEBUG: Stationary data file not found: {path.as_posix()}")
 
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
@@ -323,6 +325,8 @@ def _load_allan_data(phone_id: str | None, sensor: str) -> pd.DataFrame:
                 df["file"] = Path(row["file_name"]).stem
                 df["phase"] = row["session"].capitalize()
                 frames.append(df)
+        else:
+            print(f"DEBUG: Data file not found: {path.as_posix()}")
 
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
@@ -350,6 +354,8 @@ def _load_psd_data(phone_id: str | None, sensor: str) -> pd.DataFrame:
                 df["file"] = Path(row["file_name"]).stem
                 df["phase"] = row["session"].capitalize()
                 frames.append(df)
+        else:
+            print(f"DEBUG: Data file not found: {path.as_posix()}")
 
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
@@ -509,6 +515,7 @@ def register_tested_phone_characteristics_server(input, output, session):
     def phone_characteristics_table():
         path = PHONE_CHARACTERISTICS_PATH
         if not path.exists():
+            print(f"DEBUG: Characteristics file not found: {path.as_posix()}")
             return render.DataTable(pd.DataFrame())
         return render.DataTable(pd.read_parquet(path))
 
@@ -517,6 +524,7 @@ def register_tested_phone_characteristics_server(input, output, session):
     def start_characteristics_table():
         path = START_CHARACTERISTICS_PATH
         if not path.exists():
+            print(f"DEBUG: Start characteristics file not found: {path.as_posix()}")
             return render.DataTable(pd.DataFrame())
         return render.DataTable(pd.read_parquet(path))
 
@@ -525,6 +533,7 @@ def register_tested_phone_characteristics_server(input, output, session):
     def end_characteristics_table():
         path = END_CHARACTERISTICS_PATH
         if not path.exists():
+            print(f"DEBUG: End characteristics file not found: {path.as_posix()}")
             return render.DataTable(pd.DataFrame())
         return render.DataTable(pd.read_parquet(path))
 
