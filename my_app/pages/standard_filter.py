@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import pandas as pd
 from shiny import ui, reactive
 
@@ -45,7 +45,10 @@ def load_index(path: Path) -> pd.DataFrame:
 
     # 5. Standardize all paths to posix style
     if "path" in df.columns:
-        df["path"] = df["path"].apply(lambda x: Path(x).as_posix() if isinstance(x, str) else x)
+        df["path"] = df["path"].apply(
+            lambda x: PureWindowsPath(str(x)).as_posix() if pd.notna(x) else x
+        )
+    print(df.columns)
         
     return df
 
