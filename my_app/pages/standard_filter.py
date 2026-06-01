@@ -2,7 +2,9 @@ from pathlib import Path
 import pandas as pd
 from shiny import ui, reactive
 
-DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+PAGES_DIR = Path(__file__).resolve().parent
+APP_DIR = PAGES_DIR.parent
+DATA_DIR = APP_DIR / "data"
 DROP_INDEX_PATH = DATA_DIR / "lookup_tables_parquet" / "index" / "drop_file_index.parquet"
 CALIB_INDEX_PATH = DATA_DIR / "lookup_tables_parquet" / "index" / "calib_index.parquet"
 

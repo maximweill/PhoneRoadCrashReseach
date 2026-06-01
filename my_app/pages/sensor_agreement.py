@@ -9,7 +9,9 @@ import re
 
 from .standard_filter import get_drop_index_filters, filter_drop_index_by_input, sorted_strings, DROP_INDEX
 
-DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+PAGES_DIR = Path(__file__).resolve().parent
+APP_DIR = PAGES_DIR.parent
+DATA_DIR = APP_DIR / "data"
 AGREEMENT_PATH = DATA_DIR / "phone_drop_test_data_parquet" / "agreement" / "agreement.parquet"
 
 CATEGORIES = {

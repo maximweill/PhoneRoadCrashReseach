@@ -7,7 +7,9 @@ from shiny import reactive, render, ui
 from shinywidgets import output_widget, render_plotly
 
 
-DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+PAGES_DIR = Path(__file__).resolve().parent
+APP_DIR = PAGES_DIR.parent
+DATA_DIR = APP_DIR / "data"
 PHONE_CHARACTERISTICS_PATH = (
     DATA_DIR / "lookup_tables_parquet" / "characteristics" / "phone_characteristics_aggregated.parquet"
 )

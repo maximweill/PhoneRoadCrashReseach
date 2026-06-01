@@ -4,7 +4,8 @@ from pathlib import Path
 import pandas as pd
 
 
-PHYPOX_DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "phyphox_parquet"
+UTILS_DIR = Path(__file__).resolve().parent
+PHYPOX_DATA_DIR = UTILS_DIR.parent / "data" / "phyphox_parquet"
 DEVICES_DATA_PATH = PHYPOX_DATA_DIR / "devices.parquet"
 METADATA_PATH = PHYPOX_DATA_DIR / "metadata.parquet"
 
