@@ -60,7 +60,7 @@ def sensor_correlation_page():
                     "corr_sensor",
                     "Select Sensor",
                     choices=SENSOR_OPTIONS,
-                    selected=SENSOR_OPTIONS[0],
+                    selected=SENSOR_OPTIONS[-1],
                 ),
                 ui.input_radio_buttons(
                     "corr_plot_type",

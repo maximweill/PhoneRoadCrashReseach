@@ -16,10 +16,10 @@ PLOT_HEIGHT = "100%"
 HISTOGRAM_HEIGHT = "100%"
 
 
-def _default_choice(choices: list[str], preferred: str) -> str | None:
-    if preferred in choices:
+def _default_choice(choices: list[str], preferred: str = None) -> str | None:
+    if preferred and preferred in choices:
         return preferred
-    return choices[0] if choices else None
+    return choices[-1] if choices else None
 
 
 def sensor_abilities_page():
@@ -35,10 +35,7 @@ def sensor_abilities_page():
                     "sensor_manufacturer",
                     "Manufacturer",
                     choices=manufacturer_choices,
-                    selected=_default_choice(
-                        manufacturer_choices,
-                        DEFAULT_MANUFACTURER,
-                    ),
+                    selected=_default_choice(manufacturer_choices),
                 ),
                 ui.input_text(
                     "sensor_model_text",
@@ -49,7 +46,7 @@ def sensor_abilities_page():
                     "sensor_variable",
                     "Variable",
                     choices=variable_choices,
-                    selected=_default_choice(variable_choices, DEFAULT_VARIABLE),
+                    selected=_default_choice(variable_choices),
                 ),
                 fill=False,
             ),

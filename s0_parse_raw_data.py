@@ -17,12 +17,12 @@ def main():
     # )
 
 
-    continuous_drops_results = ppl.run_directory_parallel(
-        pipeline=ppl.definitions.EXTRACT_CONTINUOUS_PIPELINE,
-        src_dir=Path("data_processing_gitignore/RAW_DATA/continuous_drops"),
-        output_dir=Path("data_processing_gitignore/phone_drop_test_data/parsed/continuous"),
-        log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/continuous_parsing_log.csv")
-    )
+    # continuous_drops_results = ppl.run_directory_parallel(
+    #     pipeline=ppl.definitions.EXTRACT_CONTINUOUS_PIPELINE,
+    #     src_dir=Path("data_processing_gitignore/RAW_DATA/continuous_drops"),
+    #     output_dir=Path("data_processing_gitignore/phone_drop_test_data/parsed/continuous"),
+    #     log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/continuous_parsing_log.csv")
+    # )
 
     # initial_drop_results = ppl.run_directory_parallel(
     #     pipeline=ppl.definitions.OLD_PHONE_PIPELINE,
@@ -53,12 +53,12 @@ def main():
     # )
 
 
-    # continuous_stationary_accel_framed_end_results = ppl.run_directory_parallel(
-    #     pipeline=ppl.definitions.STATIONARY_PARSING_PIPELINE_BOTH,
-    #     src_dir=Path("data_processing_gitignore/RAW_DATA/continuous_stationary_accel_framed_end"),
-    #     output_dir=Path("data_processing_gitignore/stationary/end/parsed"),
-    #     log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/continuous_stationary_accel_framed_end_parsing_log.csv")
-    # )
+    continuous_stationary_accel_framed_end_results = ppl.run_directory_parallel(
+        pipeline=ppl.definitions.STATIONARY_PARSING_PIPELINE_BOTH,
+        src_dir=Path("data_processing_gitignore/RAW_DATA/continuous_stationary_accel_framed_end"),
+        output_dir=Path("data_processing_gitignore/stationary/end/parsed"),
+        log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/continuous_stationary_accel_framed_end_parsing_log.csv")
+    )
 
 
 if __name__ == '__main__':

@@ -61,13 +61,21 @@ def get_phone_card(id_prefix: str, df: pd.DataFrame = None, selected_count: int 
         return ui.card(ui.card_header("Select Phone(s)"), ui.p("No data available"), fill=False)
         
     phone_ids = sorted_strings(df["phone_id"])
+    
+    # Default to Phone002 if it exists, otherwise use the first n phones
+    default_phone = "Phone002"
+    if default_phone in phone_ids:
+        selected = [default_phone]
+    else:
+        selected = phone_ids[:selected_count]
+
     return ui.card(
         ui.card_header("Select Phone(s)"),
         ui.input_checkbox_group(
             f"{id_prefix}_phone_id",
             "",
             choices=phone_ids,
-            selected=phone_ids[:selected_count],
+            selected=selected,
         ),
         fill=False,
     )
@@ -121,7 +129,7 @@ def get_filter_cards(id_prefix: str, df: pd.DataFrame = None):
                         f"{id_prefix}_choices_{speed}",
                         "",
                         choices=choices,
-                        selected=list(choices.keys()),
+                        selected=list(choices.keys())[-1:],
                     ),
                     fill=False,
                 )
@@ -145,7 +153,7 @@ def get_filter_cards(id_prefix: str, df: pd.DataFrame = None):
                             f"{id_prefix}_choices_{config}",
                             "",
                             choices=choices,
-                            selected=list(choices.keys()),
+                            selected=list(choices.keys())[-1:],
                         ),
                         fill=False,
                     )

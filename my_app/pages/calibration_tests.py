@@ -19,6 +19,32 @@ CALIBRATION_DIR = DATA_DIR / "6axis_calibration"
 PARAMETERS_PATH = CALIBRATION_DIR / "calibration" / "parameters.parquet"
 
 G = 9.80665
+
+PHONE_SYMBOLS = {
+    "Phone001": "circle",
+    "Phone002": "cross",
+    "Phone003": "square",
+    "Phone004": "diamond",
+    "Phone005": "triangle-up",
+    "Phone006": "star",
+}
+
+def _get_numeric_time(df):
+    if df.empty or "global_time" not in df.columns:
+        return pd.Series(0, index=df.index)
+    
+    # Try common format first: YYYYMMDD_HHMMSS
+    s = df["global_time"].astype(str)
+    times = pd.to_datetime(s, format="%Y%m%d_%H%M%S", errors='coerce')
+    if times.isna().all():
+        times = pd.to_datetime(s, errors='coerce')
+    
+    if times.notna().any():
+        # Convert to unix timestamp in seconds
+        return pd.to_numeric(times) // 10**9
+        
+    return pd.to_numeric(df["global_time"], errors='coerce').fillna(0)
+
 def load_parameters() -> pd.DataFrame:
     df = pd.read_parquet(PARAMETERS_PATH)
     return df
@@ -203,6 +229,9 @@ def register_calibration_tests_server(input, output, session):
         if df.empty:
             return go.Figure().update_layout(title="No data")
 
+        df = df.copy()
+        df["global_time_num"] = _get_numeric_time(df)
+
         fig = make_subplots(rows=1, cols=3, subplot_titles=("AX vs AY", "AY vs AZ", "AZ vs AX"))
         
         pairings = [
@@ -216,11 +245,21 @@ def register_calibration_tests_server(input, output, session):
         circle_y = G * np.sin(theta)
 
         for i, (col_x, col_y) in enumerate(pairings):
-            for phone_id in df["phone_id"].unique():
+            for phone_id in sorted(df["phone_id"].unique()):
                 pdf = df[df["phone_id"] == phone_id]
+                symbol = PHONE_SYMBOLS.get(phone_id, "circle")
                 fig.add_trace(
-                    go.Scatter(x=pdf[col_x], y=pdf[col_y], mode='markers', name=phone_id, 
-                               legendgroup=phone_id, showlegend=(i==0)),
+                    go.Scatter(
+                        x=pdf[col_x], y=pdf[col_y], mode='markers', name=phone_id, 
+                        legendgroup=phone_id, showlegend=(i==0),
+                        marker=dict(
+                            color=pdf["global_time_num"],
+                            coloraxis='coloraxis',
+                            symbol=symbol,
+                            size=4,
+                            opacity=0.6
+                        )
+                    ),
                     row=1, col=i+1
                 )
             
@@ -232,7 +271,11 @@ def register_calibration_tests_server(input, output, session):
             fig.update_xaxes(title_text=col_x, row=1, col=i+1)
             fig.update_yaxes(title_text=col_y, row=1, col=i+1)
 
-        fig.update_layout(height=500, title_text="Accelerometer Pairings")
+        fig.update_layout(
+            height=500, title_text="Accelerometer Pairings",
+            coloraxis=dict(colorscale='Viridis', colorbar=dict(title="Time")),
+            legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5)
+        )
         return fig
 
     @output
@@ -242,6 +285,9 @@ def register_calibration_tests_server(input, output, session):
         if params.empty:
             return go.Figure().update_layout(title="No data")
 
+        params = params.copy()
+        params["global_time_num"] = _get_numeric_time(params)
+
         fig = make_subplots(rows=1, cols=3, subplot_titles=("AX vs AY Params", "AY vs AZ Params", "AZ vs AX Params"))
         
         pairings = [
@@ -250,34 +296,51 @@ def register_calibration_tests_server(input, output, session):
             ("LinAccZ_offset", "LinAccZ_scale", "LinAccX_offset", "LinAccX_scale")
         ]
 
+        theta = np.linspace(0, 2*np.pi, 100)
+
         for i, (ox_col, sx_col, oy_col, sy_col) in enumerate(pairings):
             for row in params.itertuples():
                 ox, sx = getattr(row, ox_col), getattr(row, sx_col)
                 oy, sy = getattr(row, oy_col), getattr(row, sy_col)
                 
-                # Bias point
+                # Ellipse tracing scaling factors
+                ex = ox + sx * np.cos(theta)
+                ey = oy + sy * np.sin(theta)
+                
                 fig.add_trace(
-                    go.Scatter(x=[ox], y=[oy], mode='markers', name=f"{row.phone_id} bias",
-                               legendgroup=row.phone_id, showlegend=(i==0)),
+                    go.Scatter(
+                        x=ex, y=ey, mode='lines',
+                        line=dict(color='rgba(150, 150, 150, 0.5)', width=1),
+                        legendgroup=row.phone_id, showlegend=False
+                    ),
                     row=1, col=i+1
                 )
-                
-                # Scale arrows
-                fig.add_annotation(
-                    x=ox + sx, y=oy, ax=ox, ay=oy,
-                    xref=f"x{i+1}", yref=f"y{i+1}", axref=f"x{i+1}", ayref=f"y{i+1}",
-                    showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2, arrowcolor="red"
-                )
-                fig.add_annotation(
-                    x=ox, y=oy + sy, ax=ox, ay=oy,
-                    xref=f"x{i+1}", yref=f"y{i+1}", axref=f"x{i+1}", ayref=f"y{i+1}",
-                    showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=2, arrowcolor="blue"
+
+                # Bias point
+                symbol = PHONE_SYMBOLS.get(row.phone_id, "circle")
+                fig.add_trace(
+                    go.Scatter(
+                        x=[ox], y=[oy], mode='markers', name=f"{row.phone_id}",
+                        legendgroup=row.phone_id, showlegend=(i==0),
+                        marker=dict(
+                            color=[row.global_time_num],
+                            coloraxis='coloraxis',
+                            symbol=symbol,
+                            size=10,
+                            line=dict(width=1, color='black')
+                        )
+                    ),
+                    row=1, col=i+1
                 )
 
             fig.update_xaxes(title_text=ox_col.replace("_offset", ""), row=1, col=i+1)
             fig.update_yaxes(title_text=oy_col.replace("_offset", ""), row=1, col=i+1)
 
-        fig.update_layout(height=500, title_text="Accelerometer Calibration Parameters")
+        fig.update_layout(
+            height=500, title_text="Accelerometer Calibration Parameters",
+            coloraxis=dict(colorscale='Viridis', colorbar=dict(title="Time")),
+            legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5)
+        )
         return fig
 
     @output
@@ -301,11 +364,21 @@ def register_calibration_tests_server(input, output, session):
         if params.empty:
             return go.Figure().update_layout(title="No data")
 
+        params = params.copy()
+        params["global_time_num"] = _get_numeric_time(params)
+
         fig = px.scatter_3d(
             params, x="RotVelX (rad/s)_bias", y="RotVelY (rad/s)_bias", z="RotVelZ (rad/s)_bias",
-            color="phone_id", text="global_time"
+            color="global_time_num", symbol="phone_id", 
+            symbol_map=PHONE_SYMBOLS,
+            text="global_time",
+            color_continuous_scale="Viridis",
+            labels={"global_time_num": "Time"},
+            title="Rotational Velocity Bias"
         )
-        fig.update_layout(title="Rotational Velocity Bias")
+        fig.update_layout(
+            legend=dict(orientation="h", yanchor="top", y=-0.05, xanchor="center", x=0.5)
+        )
         return fig
 
     @output

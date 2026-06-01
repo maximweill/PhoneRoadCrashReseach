@@ -23,6 +23,11 @@ def convert_csv_to_parquet(csv_file: Path, pq_file: Path, downsample: int = 1, n
             df = df.iloc[::downsample, :].reset_index(drop=True)
             
         pq_file.parent.mkdir(parents=True, exist_ok=True)
+
+        #reduce size by float64->32
+        float_cols = df.select_dtypes(include=["float"]).columns
+        df[float_cols] = df[float_cols].astype("float32")
+
         df.to_parquet(pq_file, engine='pyarrow', index=False, compression='snappy')
         print(f"  Converted {csv_file.name} -> {pq_file.name}")
     except Exception as e:
@@ -81,7 +86,9 @@ if __name__ == "__main__":
     # 1. Car Crash Data
     convert_csv_dir_to_parquet(
         source_dir=DATA_DIR / "car_crash_data" / "parsed",
-        output_dir=WEBAPP_DATA_DIR / "car_crash_data_parquet"
+        output_dir=WEBAPP_DATA_DIR / "car_crash_data_parquet",
+        nrows=20_000,
+        downsample=100
     )
 
     

@@ -79,7 +79,9 @@ STATIONARY_PHONES = _get_all_phones()
 
 
 def _default_stationary_phone() -> str | None:
-    return STATIONARY_PHONES[0] if STATIONARY_PHONES else None
+    if "Phone002" in STATIONARY_PHONES:
+        return "Phone002"
+    return STATIONARY_PHONES[-1] if STATIONARY_PHONES else None
 
 
 def tested_phone_characteristics_page():
