@@ -42,6 +42,10 @@ def load_index(path: Path) -> pd.DataFrame:
         df["test_id"] = df["test_name"]
     elif "file_name" in df.columns:
         df["test_id"] = df["file_name"].apply(lambda x: Path(x).stem)
+
+    # 5. Standardize all paths to posix style
+    if "path" in df.columns:
+        df["path"] = df["path"].apply(lambda x: Path(x).as_posix() if isinstance(x, str) else x)
         
     return df
 

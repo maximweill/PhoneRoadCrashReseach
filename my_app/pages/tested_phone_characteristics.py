@@ -59,7 +59,7 @@ def _read_stationary_index() -> pd.DataFrame:
                         "session": session,
                         "type": data_type,
                         "file_name": filename,
-                        "path": str(rel_path.as_posix()),
+                        "path": rel_path.as_posix(),
                     }
                 )
         except ValueError:
