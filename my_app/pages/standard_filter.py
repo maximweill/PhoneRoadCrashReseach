@@ -7,6 +7,16 @@ APP_DIR = PAGES_DIR.parent
 DATA_DIR = APP_DIR / "data"
 DROP_INDEX_PATH = DATA_DIR / "lookup_tables_parquet" / "index" / "drop_file_index.parquet"
 CALIB_INDEX_PATH = DATA_DIR / "lookup_tables_parquet" / "index" / "calib_index.parquet"
+DROP_PSD_INDEX_PATH = DATA_DIR / "lookup_tables_parquet" / "index" / "drop_psd_index.parquet"
+
+
+def _path_stem(x):
+    return Path(x).stem
+def _windows_to_posix(x):
+    if pd.notna(x):
+        return PureWindowsPath(str(x)).as_posix()
+    return x
+
 
 def load_index(path: Path) -> pd.DataFrame:
     """Loads and prepares an index file for use in the UI."""
@@ -41,13 +51,11 @@ def load_index(path: Path) -> pd.DataFrame:
     elif "test_name" in df.columns:
         df["test_id"] = df["test_name"]
     elif "file_name" in df.columns:
-        df["test_id"] = df["file_name"].apply(lambda x: Path(x).stem)
+        df["test_id"] = df["file_name"].apply(_path_stem)
 
     # 5. Standardize all paths to posix style
     if "path" in df.columns:
-        df["path"] = df["path"].apply(
-            lambda x: PureWindowsPath(str(x)).as_posix() if pd.notna(x) else x
-        )
+        df["path"] = df["path"].apply(_windows_to_posix)
     print(df.columns)
         
     return df
@@ -55,10 +63,17 @@ def load_index(path: Path) -> pd.DataFrame:
 def sorted_strings(values: pd.Series) -> list[str]:
     return sorted(values.dropna().astype(str).unique().tolist())
 
+
 def sort_numeric_strings(values: pd.Series) -> list[str]:
     try:
         # Filter out non-numeric looking strings if necessary, or just try-except
-        return sorted(values.dropna().astype(str).unique().tolist(), key=lambda value: float(value))
+        def key_func(value):
+            return float(value)
+
+        return sorted(
+            values.dropna().astype(str).unique().tolist(),
+            key=key_func
+        )
     except (ValueError, TypeError):
         return sorted_strings(values)
 
@@ -263,6 +278,23 @@ def filter_calib_index_by_input(input, id_prefix: str, phone_input_id: str = Non
 def get_speed_cards(id_prefix: str):
     return get_filter_cards(id_prefix, DROP_INDEX)
 
+
+def get_drop_psd_index_filters(id_prefix: str):
+    return [get_phone_card(id_prefix, DROP_PSD_INDEX), *get_filter_cards(id_prefix, DROP_PSD_INDEX)]
+
+
+def filter_drop_psd_index_by_input(input, id_prefix: str, phone_input_id: str = None):
+    return filter_index_by_input(input, id_prefix, DROP_PSD_INDEX, phone_input_id)
+
+
+def get_unique_drop_psd():
+    if DROP_PSD_INDEX.empty:
+        return pd.DataFrame()
+    return DROP_PSD_INDEX.drop_duplicates(
+        subset=["target_speed_mps_str", "config", "repeat_str", "phone_id"]
+    )
+
 # Pre-loaded indices
 DROP_INDEX = load_index(DROP_INDEX_PATH)
 CALIB_INDEX = load_index(CALIB_INDEX_PATH)
+DROP_PSD_INDEX = load_index(DROP_PSD_INDEX_PATH)

@@ -1,6 +1,9 @@
 import re
 from typing import Dict, Any,Protocol
 
+import re
+from typing import Dict, Any, Protocol
+
 def parse_convention(name: str) -> Dict[str, Any]:
     pattern = re.compile(
         r"^(?P<speed>[\d.]+)mps_"
@@ -22,20 +25,37 @@ def parse_convention(name: str) -> Dict[str, Any]:
         "target_speed_mps": speed,
         "config": config,
         "repeat": repeat,
+        "phone_id": "",  # default fallback
     }
 
-    # Infer convention + phone_id
-    if rest.startswith("Headform_Transformed_"):
-        settings["convention"] = "ref"
-        settings["phone_id"] = rest.replace("Headform_Transformed_", "", 1)
+    # --- extract convention suffix ---
+    is_psd = rest.endswith("_psd")
+    core = rest[:-4] if is_psd else rest  # strip "_psd" safely
 
-    elif rest.endswith("_framed"):
-        settings["convention"] = "framed"
-        settings["phone_id"] = rest[:-7]  # remove "_framed"
+    # --- phone_id extraction via regex (robust) ---
+    phone_match = re.search(r"Headform_Transformed_(.+)", core)
+    framed_match = re.search(r"(.+)_framed$", core)
 
+    if is_psd:
+        if phone_match:
+            settings["convention"] = "ref_psd"
+            settings["phone_id"] = phone_match.group(1) or ""
+        elif framed_match:
+            settings["convention"] = "framed_psd"
+            settings["phone_id"] = framed_match.group(1) or ""
+        else:
+            settings["convention"] = "default_psd"
+            settings["phone_id"] = core or ""
     else:
-        settings["convention"] = "default"
-        settings["phone_id"] = rest
+        if phone_match:
+            settings["convention"] = "ref"
+            settings["phone_id"] = phone_match.group(1) or ""
+        elif framed_match:
+            settings["convention"] = "framed"
+            settings["phone_id"] = framed_match.group(1) or ""
+        else:
+            settings["convention"] = "default"
+            settings["phone_id"] = core or ""
 
     return settings
 
@@ -50,6 +70,18 @@ class NameConvention(Protocol):
     ) -> str:
         ...
 
+def default_convention(
+    phone_id: str,
+    config: str,
+    target_speed_mps: float,
+    repeat: int,
+) -> str:
+    return (
+        f"{target_speed_mps}mps_"
+        f"{config}_"
+        f"REPEAT{repeat}_"
+        f"{phone_id}"
+    )
 
 def ref_convention(
     phone_id: str,
@@ -72,23 +104,24 @@ def framed_convention(
     target_speed_mps: float,
     repeat: int,
 ) -> str:
-    return (
-        f"{target_speed_mps}mps_"
-        f"{config}_"
-        f"REPEAT{repeat}_"
-        f"{phone_id}_framed"
-    )
+    return default_convention(phone_id,config,target_speed_mps,repeat)+"_framed"
 
-
-def default_convention(
+def framed_psd_convention(
     phone_id: str,
     config: str,
     target_speed_mps: float,
     repeat: int,
 ) -> str:
-    return (
-        f"{target_speed_mps}mps_"
-        f"{config}_"
-        f"REPEAT{repeat}_"
-        f"{phone_id}"
-    )
+    return framed_convention(phone_id,config,target_speed_mps,repeat) + "_psd"
+
+def ref_psd_convention(
+    phone_id: str,
+    config: str,
+    target_speed_mps: float,
+    repeat: int,
+) -> str:
+    return ref_convention(phone_id,config,target_speed_mps,repeat) + "_psd"
+
+
+
+

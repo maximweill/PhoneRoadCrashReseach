@@ -91,8 +91,8 @@ def clean_speed_column(df: pd.DataFrame, ctx: Context):
 
 def rename_continuous_test_files(df: pd.DataFrame, ctx: Context, add_trigger0:bool = False):
     
-    # Ensure ctx has a bugs list
-    ctx.setdefault("bugs", [])
+    # Ensure ctx has an errors list
+    ctx.setdefault("errors", [])
     df["trigger"] = -1
 
     # Find duplicated filenames
@@ -103,7 +103,7 @@ def rename_continuous_test_files(df: pd.DataFrame, ctx: Context, add_trigger0:bo
     for file_name, group_idx in df[duplicated_mask].groupby("file_name").groups.items():
 
         if "continuous" not in file_name.lower():
-            ctx["bugs"].append(
+            ctx["errors"].append(
                 f"Duplicate non-continuous filename found: {file_name}"
             )
             continue

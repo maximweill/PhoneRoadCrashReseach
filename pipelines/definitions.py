@@ -47,22 +47,15 @@ CONTINUOUS_PHONE_PIPELINE = Pipeline(
     saver=save_split_by_triggered,
 )
 
-FRAMED_RESAMPLING_PIPELINE = Pipeline(
-    name="framed_resampling",
-    loader=load_phone_drop_with_ref,
-    transforms=[
-        normalize_column_names,
-        ref_timestamps_matching,
-        trim_reference
-    ],
-    saver=save_single_csv,
-)
+
 
 PHONE_DROP_FRAMING_PIPELINE = Pipeline(
     name="phone_drop",
     loader=load_phone_drop_with_ref,
     transforms=[
         normalize_column_names,
+        normalize_time_column,
+        sort_by_time,
         compute_lag,
         align_to_reference,
         trim_reference
@@ -70,12 +63,40 @@ PHONE_DROP_FRAMING_PIPELINE = Pipeline(
     saver=save_single_csv,
 )
 
+HEADFORM_PARSING_PIPELINE = Pipeline(
+    name="head_parsing",
+    loader=load_excel,
+    transforms=[
+        normalize_column_names,
+        normalize_time_column,
+        sort_by_time,
+        CFC_filter
+    ],
+    saver=save_single_csv,
+)
+
+FRAMED_RESAMPLING_PIPELINE = Pipeline(
+    name="framed_resampling",
+    loader=load_phone_drop_with_ref,
+    transforms=[
+        normalize_column_names,
+        normalize_time_column,
+        sort_by_time,
+        CFC_filter,
+        ref_timestamps_matching,
+        trim_reference
+    ],
+    saver=save_single_csv,
+)
 
 REFERENCE_PARSING_PIPELINE = Pipeline(
     name="reference_parsing",
     loader=load_excel,
     transforms=[
         normalize_column_names,
+        normalize_time_column,
+        sort_by_time,
+        CFC_filter,
         resample_reference,
         trim_reference
     ],
@@ -99,7 +120,7 @@ CORRELATION_PARAMETERS = Pipeline(
     name="SENSOR_AGREEMENT_VALIDATION",
     transforms=[
         reset_index,
-        ignore_saturated,
+        #ignore_saturated,
         compute_n,
         compute_mae_from_ideal,        # error magnitude
         compute_pearson_correlation,      # signal similarity
@@ -140,6 +161,31 @@ STATIONARY_PARSING_PIPELINE_BOTH = Pipeline(
         interpolate_outliers
     ],
     saver=partial(save_stationary,both=True),
+)
+
+HEADFORM_STATIONARY_PIPELINE = Pipeline(
+    name="headform_stationary",
+    loader=load_headform_csv,
+    transforms=[
+        normalize_headform_columns,
+        convert_units,
+        trim_stationary,
+        interpolate_outliers
+    ],
+    saver=save_headform_stationary,
+)
+
+HEADFORM_FILTERED_STATIONARY_PIPELINE = Pipeline(
+    name="headform_filtered_stationary",
+    loader=load_headform_csv,
+    transforms=[
+        normalize_headform_columns,
+        convert_units,
+        partial(CFC_filter, cutoff_override=200),
+        trim_stationary,
+        interpolate_outliers
+    ],
+    saver=save_headform_stationary,
 )
 
 
@@ -216,6 +262,7 @@ FRAME_CALIBRATION_PIPELINE = Pipeline(
     name="frame_calibration",
     loader=load_csv,
     transforms=[
+        normalize_time_column,
         drop_motion,
         choose_axis_group,
         drop_nan,
@@ -230,9 +277,12 @@ PHONE_CHARACTERISTICS_PIPELINE = Pipeline(
     name="phone_characteristics",
     loader=load_csv,
     transforms=[
+        normalize_time_column,
+        sort_by_time,
         compute_sampling_rate_stats,
         compute_battery_stats,
         compute_magnetic_stats,
+        compute_duration,
         compute_sensor_max_stats,
         create_characteristics_summary,
     ],
@@ -253,6 +303,7 @@ CALIBRATION_PARAMETERS_PIPELINE = Pipeline(
     name="calibration_parameters",
     loader=load_csv,
     transforms=[
+        normalize_time_column,
         compute_6axis_calibration,
         create_calibration_summary,
     ],
@@ -266,6 +317,7 @@ ALLAN_VARIANCE_PIPELINE_BOTH = Pipeline(
     name="allan_variance",
     loader=load_csv,
     transforms=[
+        normalize_time_column,
         partial(calculate_allan_variance_transform,both=True),
     ],
     saver=save_allan_variance,
@@ -275,6 +327,7 @@ ALLAN_VARIANCE_PIPELINE = Pipeline(
     name="allan_variance",
     loader=load_csv,
     transforms=[
+        normalize_time_column,
         calculate_allan_variance_transform,
     ],
     saver=save_allan_variance,
@@ -287,6 +340,7 @@ POWER_SPECTRAL_DENSITY_PIPELINE_BOTH = Pipeline(
     name="power_spectral_density",
     loader=load_csv,
     transforms=[
+        normalize_time_column,
         partial(calculate_psd_transform, both=True),
     ],
     saver=save_psd,
@@ -296,6 +350,7 @@ POWER_SPECTRAL_DENSITY_PIPELINE = Pipeline(
     name="power_spectral_density",
     loader=load_csv,
     transforms=[
+        normalize_time_column,
         calculate_psd_transform,
     ],
     saver=save_psd,

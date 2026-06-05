@@ -22,21 +22,32 @@ def _process_single_row(
     ref_naming_convention: NameConvention,
     out_naming_convention: NameConvention,
     src_naming_convention: NameConvention | None,
-    input_extension: str
+    input_extension: str,
+    extra_context: Context | None = None
 ) -> Context:
     """Top-level function required for multiprocessing serialization."""
     file_base = Path(row_dict["file_name"]).name
 
     # Determine input path
     if src_naming_convention is None:
-        input_path = src_dir / f"{file_base}.{input_extension}"
+        filename = f"{file_base}.{input_extension}"
     else:
-        input_path = src_dir / f"{src_naming_convention(
+        filename = f"{src_naming_convention(
             phone_id=row_dict['phone_id'],
             config=row_dict['config'],
             target_speed_mps=row_dict['target_speed_mps'],
             repeat=row_dict['repeat'],
         )}.{input_extension}"
+
+    matches = list(src_dir.rglob(filename))
+
+    if not matches:
+        raise FileNotFoundError(f"Could not find {filename} under {src_dir}")
+
+    if len(matches) > 1:
+        raise ValueError(f"Multiple matches found for {filename}: {matches}")
+
+    input_path = matches[0]
 
     # Determine reference path safely if ref_dir is provided
     ref_path = None
@@ -65,7 +76,8 @@ def _process_single_row(
         "ref_signal_col": "RotVelRes (rad/s)",
         "outputs": [],
         "global_time":row_dict["global_time"],
-        "log_row": row_dict
+        "log_row": row_dict,
+        **(extra_context or {}),
     }
 
     print(f"{i}: Processing {input_path.name}")
@@ -88,7 +100,8 @@ def run_from_clean_log(
     ref_naming_convention: NameConvention = ref_convention,
     out_naming_convention: NameConvention = framed_convention,
     src_naming_convention: NameConvention | None = None,
-    input_extension: str = "csv"
+    input_extension: str = "csv",
+    extra_context: Context | None = None
 ) -> pd.DataFrame:
     """Original Sequential Runner"""
 
@@ -109,8 +122,12 @@ def run_from_clean_log(
         # Convert row to dict for processing
         ctx = _process_single_row(
             i, row.to_dict(), pipeline, src_dir, output_dir, ref_dir,
-            ref_naming_convention, out_naming_convention, src_naming_convention, input_extension
+            ref_naming_convention, out_naming_convention, src_naming_convention, input_extension,
+            extra_context
         )
+        if "error" in ctx:
+            if len(ctx["errors"])>0:
+                print(f"+ WARNING encountered errors : {ctx["errors"]}")
         contexts.append(ctx)
 
     out_log = pd.DataFrame(contexts)
@@ -132,7 +149,8 @@ def run_from_clean_log_parallel(
     out_naming_convention: NameConvention = framed_convention,
     src_naming_convention: NameConvention | None = None,
     input_extension: str = "csv",
-    max_workers: int | None = None
+    max_workers: int | None = None,
+    extra_context: Context | None = None
 ) -> pd.DataFrame:
     """Parallelized Runner using ProcessPoolExecutor"""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -162,14 +180,20 @@ def run_from_clean_log_parallel(
                     _process_single_row,
                     i, row_dict, pipeline, src_dir, output_dir, ref_dir,
                     ref_naming_convention, out_naming_convention,
-                    src_naming_convention, input_extension
+                    src_naming_convention, input_extension,
+                    extra_context
                 )
             )
 
         # Collect results as they complete
         for future in as_completed(futures):
             try:
-                ctx = future.result()
+                ctx = future.result()   # <-- retrieve the Context returned by _process_single_row
+                if "errors" in ctx:
+                    if len(ctx["errors"]) > 0:
+                        print(f"+ WARNING encountered errors : {ctx['errors']}")
+                else:
+                    print("- no errors column")
                 contexts.append(ctx)
             except Exception as e:
                 print(f"Pipeline process encountered an error: {e}")

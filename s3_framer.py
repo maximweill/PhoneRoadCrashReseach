@@ -1,34 +1,34 @@
 from pathlib import Path
 import pipelines as ppl
-from pipelines.log_runner import run_from_clean_log_parallel
+from pipelines.log_runner import run_from_clean_log_parallel,run_from_clean_log
 import pipelines.naming as n
 
 if __name__ == "__main__":
 
-    # =========================================================
-    # ONLY RUN REFERENCE PARSING AFTER PARSING THE PHONE CHARACTERISTICS 
-    # =========================================================
-    #Parse reference signals from transformed headform data
-    downsampled_reference_results = ppl.run_directory_parallel(
-        pipeline=ppl.definitions.REFERENCE_PARSING_PIPELINE,
-        src_dir=Path("data_processing_gitignore/RAW_DATA/transformed_headform"),
-        output_dir=Path("data_processing_gitignore/phone_drop_test_data/sync_ref"),
-        log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/reference_parsing_log.csv"),
-        extension="*.xlsx",
-        extra_context = {
-            "phone_characteristics_aggregated": Path("data_processing_gitignore/phone_characteristics/aggregated/characteristics_drops.csv")
-        }
-    )
+    # # =========================================================
+    # # ONLY RUN REFERENCE PARSING AFTER PARSING THE PHONE CHARACTERISTICS 
+    # # =========================================================
+    # #Parse reference signals from transformed headform data
+    # downsampled_reference_results = ppl.run_directory_parallel(
+    #     pipeline=ppl.definitions.REFERENCE_PARSING_PIPELINE,
+    #     src_dir=Path("data_processing_gitignore/RAW_DATA/transformed_headform"),
+    #     output_dir=Path("data_processing_gitignore/phone_drop_test_data/sync_ref"),
+    #     log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/reference_parsing_log.csv"),
+    #     extension="*.xlsx",
+    #     extra_context = {
+    #         "phone_characteristics_aggregated": Path("data_processing_gitignore/phone_characteristics/aggregated/characteristics_drops.csv")
+    #     }
+    # )
 
 
-    phone_framed_to_ref_results = run_from_clean_log_parallel(
-        pipeline=ppl.definitions.PHONE_DROP_FRAMING_PIPELINE,
-        clean_log_path=Path("data_processing_gitignore/lookup_tables/data_collection_log.csv"),
-        src_dir=Path("data_processing_gitignore/phone_drop_test_data/parsed"),
-        output_dir=Path("data_processing_gitignore/phone_drop_test_data/framed"),
-        ref_dir=Path("data_processing_gitignore/phone_drop_test_data/sync_ref"),
-        log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/framing_run_log.csv"),
-    )
+    # phone_framed_to_ref_results = run_from_clean_log_parallel(
+    #     pipeline=ppl.definitions.PHONE_DROP_FRAMING_PIPELINE,
+    #     clean_log_path=Path("data_processing_gitignore/lookup_tables/data_collection_log.csv"),
+    #     src_dir=Path("data_processing_gitignore/phone_drop_test_data/parsed"),
+    #     output_dir=Path("data_processing_gitignore/phone_drop_test_data/framed"),
+    #     ref_dir=Path("data_processing_gitignore/phone_drop_test_data/sync_ref"),
+    #     log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/framing_run_log.csv"),
+    # )
 
     reference_exact_sampling_results = run_from_clean_log_parallel(
         pipeline=ppl.definitions.FRAMED_RESAMPLING_PIPELINE,
@@ -40,7 +40,10 @@ if __name__ == "__main__":
         ref_naming_convention=n.framed_convention,
         out_naming_convention=n.ref_convention,
         src_naming_convention=n.ref_convention,
-        input_extension="xlsx"
+        input_extension="xlsx",
+        extra_context = {
+            "phone_characteristics_aggregated": Path("data_processing_gitignore/phone_characteristics/aggregated/characteristics_drops.csv")
+        }
     )
 
     # match the files index by index to create correlation plots

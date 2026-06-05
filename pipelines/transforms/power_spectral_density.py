@@ -11,6 +11,7 @@ def calculate_psd_transform(df: pd.DataFrame, ctx: Context, both=False) -> tuple
     """
     Computes Power Spectral Density for relevant columns in the dataframe.
     """
+    ctx.setdefault("errors", [])
     filename = ctx["input_path"].name
 
     # Determine columns to analyze based on file prefix
@@ -27,7 +28,7 @@ def calculate_psd_transform(df: pd.DataFrame, ctx: Context, both=False) -> tuple
     cols = [c for c in cols if c in df.columns]
 
     if not cols:
-        print(f"  Skipping {filename}: No relevant columns found.")
+        ctx["errors"].append(f"Skipping {filename}: No relevant columns found.")
         return None, ctx
 
     # Sampling frequency
@@ -35,7 +36,7 @@ def calculate_psd_transform(df: pd.DataFrame, ctx: Context, both=False) -> tuple
     dt = np.median(np.diff(t))
 
     if pd.isna(dt) or dt <= 0:
-        print(f"  Skipping {filename}: Invalid sampling interval (dt={dt}).")
+        ctx["errors"].append(f"Skipping {filename}: Invalid sampling interval (dt={dt}).")
         return None, ctx
 
     fs = 1.0 / dt
@@ -62,6 +63,6 @@ def calculate_psd_transform(df: pd.DataFrame, ctx: Context, both=False) -> tuple
             res_df[col_name] = psd_vals
         else:
             # Handle cases where lengths might differ (though unlikely with constant nperseg)
-            print(f"  Warning: PSD length mismatch for {col_name} in {filename}")
+            ctx["errors"].append(f"PSD length mismatch for {col_name} in {filename}")
 
     return res_df, ctx

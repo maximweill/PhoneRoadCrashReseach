@@ -39,6 +39,7 @@ class Pipeline:
     ) -> tuple[list[Path], Context]:
 
         ctx: Context = context or {}
+        ctx.setdefault("errors", [])
 
         df, ctx = self.loader(input_path, ctx)
 
@@ -47,6 +48,11 @@ class Pipeline:
 
         for t in self.transforms:
             df, ctx = t(df, ctx)
+            if df is None:
+                break
+
+        if df is None:
+            return [], ctx
 
         output_files = self.saver(df, ctx)
 
@@ -94,6 +100,12 @@ def run_directory(
         
         # Execute via the helper function
         ctx = _process_single_file(args)
+        if "errors" in ctx:
+            if len(ctx["errors"])>0:
+                print(f"+ WARNING encountered errors : {ctx["errors"]}")
+        else:
+            print("- no errors column")
+        
         contexts.append(ctx)
 
     log_df = pd.DataFrame(contexts)
@@ -131,6 +143,11 @@ def run_directory_parallel(
         # executor.map guarantees the results are returned in the exact order the tasks were submitted
         for i, ctx in enumerate(executor.map(_process_single_file, tasks)):
             print(f"Completed {i+1}/{len(files)}: {ctx['input_path'].name}")
+            if "errors" in ctx:
+                if len(ctx["errors"])>0:
+                    print(f"+ WARNING encountered errors : {ctx["errors"]}")
+            else:
+                print("- no errors column")
             contexts.append(ctx)
 
     # 3. Save the logs

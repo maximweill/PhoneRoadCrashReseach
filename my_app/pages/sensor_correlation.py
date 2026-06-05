@@ -21,6 +21,14 @@ SENSOR_OPTIONS = [
     "RotAccX (rad/s2)", "RotAccY (rad/s2)", "RotAccZ (rad/s2)", "RotAccRes (rad/s2)"
 ]
 
+def _choose(x, index, stringify=True):
+    if x[0] is not None:
+        if stringify:
+            return str(x[index])
+        else:
+            return x[index]
+    return None
+
 def load_processed_agreement() -> pd.DataFrame:
     if not AGREEMENT_PATH.exists():
         print(f"DEBUG: Agreement file not found: {AGREEMENT_PATH.as_posix()}")
@@ -35,10 +43,10 @@ def load_processed_agreement() -> pd.DataFrame:
         return None, None, None, None
 
     parsed = df["input_path"].apply(parse_path)
-    df["target_speed_mps_str"] = parsed.apply(lambda x: str(x[0]) if x[0] is not None else None)
-    df["config"] = parsed.apply(lambda x: x[1])
-    df["repeat_str"] = parsed.apply(lambda x: str(x[2]) if x[2] is not None else None)
-    df["phone_id"] = parsed.apply(lambda x: x[3])
+    df["target_speed_mps_str"] = parsed.apply(_choose, index=0, stringify=True)
+    df["config"] = parsed.apply(_choose, index=1, stringify=False)
+    df["repeat_str"] = parsed.apply(_choose, index=2, stringify=True)
+    df["phone_id"] = parsed.apply(_choose, index=3, stringify=False)
     
     return df
 
@@ -75,29 +83,62 @@ def sensor_correlation_page():
                 *sidebar_cards[1:], # Speed cards
                 width=350,
             ),
-            # --- CARDS 2 & 3: Grouped Plots side-by-side (or stacked when long) ---
+            
+            # --- ROW 1: Correlation Plots & Agreement Trends ---
             ui.layout_columns(
                 ui.card(
                     ui.card_header("Correlation Plots"),
-                    output_widget("correlation_plot", height="100%"),
+                    output_widget("correlation_plot", height="500px"),
                     full_screen=True,
-                    fill=True,
                 ),
                 ui.card(
                     ui.card_header("Agreement Trends"),
-                    output_widget("agreement_metrics_plot", height="100%"),
+                    output_widget("agreement_metrics_plot", height="500px"),
                     full_screen=True,
-                    fill=True,
                 ),
-                fill=False,  # <--- Crucial: Prevents this entire row container from squeezing vertically
+                col_widths=[6, 6]
             ),
-            # --- CARD 1: Table ---
-            ui.card(
-                ui.card_header("Agreement Metrics"),
-                ui.output_data_frame("agreement_table"),
-                full_screen=True,
-                fill=False,  # <--- Crucial: Keeps the table's natural height
+            
+            ui.p(), # Spacing helper
+            
+            # --- ROW 2: Reference & Phone Signal Distributions ---
+            ui.layout_columns(
+                ui.card(
+                    ui.card_header("Reference Signal Distribution"),
+                    output_widget("ref_distribution_hist", height="350px"),
+                    full_screen=True,
+                ),
+                ui.card(
+                    ui.card_header("Phone Signal Distribution"),
+                    output_widget("framed_distribution_hist", height="350px"),
+                    full_screen=True,
+                ),
+                col_widths=[6, 6]
             ),
+            
+            ui.p(), # Spacing helper
+            
+            # --- ROW 3: Pearson Agreement Statistics ---
+            ui.layout_columns(
+                ui.card(
+                    ui.card_header("Pearson Agreement Statistics"),
+                    output_widget("pearson_agreement_plot", height="500px"),
+                    full_screen=True,
+                ),
+                col_widths=[12]
+            ),
+            
+            ui.p(), # Spacing helper
+            
+            # --- ROW 4: Agreement Metrics Table ---
+            ui.layout_columns(
+                ui.card(
+                    ui.card_header("Agreement Metrics"),
+                    ui.output_data_frame("agreement_table"),
+                    full_screen=True,
+                ),
+                col_widths=[12]
+            )
         )
     )
 
@@ -121,15 +162,12 @@ def register_sensor_correlation_server(input, output, session):
         if drops.empty or AGREEMENT_DF.empty:
             return pd.DataFrame()
         
-        # Merge to filter AGREEMENT_DF based on selected drops
         merged = AGREEMENT_DF.merge(
             drops[["target_speed_mps_str", "config", "repeat_str", "phone_id"]],
             on=["target_speed_mps_str", "config", "repeat_str", "phone_id"],
             how="inner"
         )
         
-        # Find columns related to the selected sensor
-        # They usually start with the sensor name
         relevant_cols = [c for c in merged.columns if c.startswith(sensor) or c in ["target_speed_mps_str", "config", "repeat_str", "phone_id"]]
         
         df = merged[relevant_cols].copy()
@@ -155,22 +193,18 @@ def register_sensor_correlation_server(input, output, session):
         loa_upper_col = f"{sensor}_ba_loa_upper"
         loa_lower_col = f"{sensor}_ba_loa_lower"
         
-        # Check if columns exist
         cols = [slope_col, intercept_col, loa_upper_col, loa_lower_col]
         missing = [c for c in cols if c not in df.columns]
         if missing:
             return px.scatter(title=f"Missing columns: {', '.join(missing)}")
 
-        # Create subplots
         fig = make_subplots(rows=2, cols=1, 
-                           shared_xaxes=True,
-                           vertical_spacing=0.1,
-                           subplot_titles=("Slope", "Intercept and Limits of Agreement"))
+                            shared_xaxes=True,
+                            vertical_spacing=0.15,
+                            subplot_titles=("Slope", "Intercept and Limits of Agreement"))
         
-        # Sort by speed then phone then repeat
         df = df.sort_values(["target_speed_mps_str", "phone_id", "repeat_str"])
 
-        # Plot Slope
         fig.add_trace(
             go.Scatter(
                 x=df["label"],
@@ -181,10 +215,8 @@ def register_sensor_correlation_server(input, output, session):
             ),
             row=1, col=1
         )
-        # Ideal slope line
         fig.add_hline(y=1.0, line_dash="dash", line_color="green", row=1, col=1)
 
-        # Plot Intercept
         fig.add_trace(
             go.Scatter(
                 x=df["label"],
@@ -197,8 +229,6 @@ def register_sensor_correlation_server(input, output, session):
             row=2, col=1
         )
         
-        # Plot LOA Bands as a shaded area
-        # We need to be careful with categorical X-axis and fill
         fig.add_trace(
             go.Scatter(
                 x=df["label"],
@@ -223,12 +253,86 @@ def register_sensor_correlation_server(input, output, session):
             row=2, col=1
         )
         
-        # Ideal intercept line
         fig.add_hline(y=0.0, line_dash="dash", line_color="green", row=2, col=1)
 
-        fig.update_layout(height=600, title_text=f"Agreement Metrics: {sensor}")
+        fig.update_layout(height=480, title_text=f"Agreement Metrics: {sensor}", margin=dict(t=60, b=40))
         fig.update_xaxes(tickangle=45)
         
+        return fig
+    
+    @output
+    @render_plotly
+    def pearson_agreement_plot():
+        params = gated_params()
+        sensor = params["sensor"]
+        df = filtered_agreement()
+
+        if df.empty:
+            return px.scatter(title="No agreement data found")
+
+        r_col = f"{sensor}_pearson_r"
+        p_col = f"{sensor}_pearson_p"
+
+        missing = [c for c in [r_col, p_col] if c not in df.columns]
+        if missing:
+            return px.scatter(title=f"Missing columns: {', '.join(missing)}")
+
+        df = df.sort_values(
+            ["target_speed_mps_str", "phone_id", "repeat_str"]
+        )
+
+        fig = make_subplots(
+            rows=1,
+            cols=1,
+            specs=[[{"secondary_y": True}]],
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=df["label"],
+                y=df[r_col],
+                mode="markers+lines",
+                name="Pearson R",
+            ),
+            secondary_y=False,
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=df["label"],
+                y=df[p_col],
+                mode="markers+lines",
+                name="Pearson P",
+            ),
+            secondary_y=True,
+        )
+
+        fig.add_hline(
+            y=0.05,
+            line_dash="dash",
+            line_color="red",
+            secondary_y=True,
+        )
+
+        fig.update_yaxes(
+            title_text="Pearson R",
+            range=[0, 1],
+            secondary_y=False,
+        )
+
+        fig.update_yaxes(
+            title_text="Pearson P",
+            secondary_y=True,
+        )
+
+        fig.update_layout(
+            title=f"Pearson Agreement Metrics: {sensor}",
+            height=450,
+            margin=dict(t=50, b=40)
+        )
+
+        fig.update_xaxes(tickangle=45)
+
         return fig
 
     @reactive.calc
@@ -240,7 +344,6 @@ def register_sensor_correlation_server(input, output, session):
         
         all_data = []
         for row in drops.itertuples():
-            # Construct filename: {speed}mps_{config}_REPEAT{repeat}_{phone_id}.parquet
             filename = f"{row.target_speed_mps_str}mps_{row.config}_REPEAT{row.repeat_str}_{row.phone_id}.parquet"
             file_path = CORRELATION_DIR / filename
             
@@ -276,7 +379,6 @@ def register_sensor_correlation_server(input, output, session):
             return px.scatter(title=f"Columns for {sensor} not found in correlation data")
         
         if plot_type == "Scatter":
-            # Create a scatter plot Ref vs Framed
             fig = px.scatter(
                 df,
                 x=ref_col,
@@ -287,26 +389,18 @@ def register_sensor_correlation_server(input, output, session):
                 hover_data=["target_speed", "config", "repeat", "phone_id"]
             )
         else:
-            # Create a 2D Heatmap (Density Heatmap)
             fig = px.density_heatmap(
                 df,
                 x=ref_col,
                 y=framed_col,
                 title=f"Density Heatmap: {sensor} (Reference vs Phone)",
                 labels={ref_col: "Reference", framed_col: "Phone (Framed)"},
-                nbinsx=50,
-                nbinsy=50,
+                nbinsx=100,
+                nbinsy=100,
                 marginal_x="histogram",
                 marginal_y="histogram"
             )
-            # Apply color scale separately to avoid 'V' color bug in marginal histograms
             fig.update_layout(coloraxis_colorscale="Viridis")
-            
-            # # Ensure each heatmap cell is visually square
-            # fig.update_yaxes(
-            #     scaleanchor="x",
-            #     scaleratio=1,
-            # )
 
         min_val = min(df[ref_col].min(), df[framed_col].min())
         max_val = max(df[ref_col].max(), df[framed_col].max())
@@ -320,5 +414,53 @@ def register_sensor_correlation_server(input, output, session):
                 showlegend=True
             )
         )
-        
+        fig.update_layout(height=480)
+        return fig
+
+    @output
+    @render_plotly
+    def ref_distribution_hist():
+        params = gated_params()
+        sensor = params["sensor"]
+        df = correlation_data()
+
+        if df.empty:
+            return px.histogram(title="No data")
+
+        ref_col = f"{sensor}_ref"
+        if ref_col not in df.columns:
+            return px.scatter(title=f"{ref_col} not found")
+
+        fig = px.histogram(
+            df,
+            x=ref_col,
+            nbins=200,
+            title=f"{sensor} - Reference Distribution",
+        )
+        fig.update_layout(height=320, margin=dict(t=40, b=30))
+        fig.update_yaxes(type="log")
+        return fig
+
+    @output
+    @render_plotly
+    def framed_distribution_hist():
+        params = gated_params()
+        sensor = params["sensor"]
+        df = correlation_data()
+
+        if df.empty:
+            return px.histogram(title="No data")
+
+        framed_col = f"{sensor}_framed"
+        if framed_col not in df.columns:
+            return px.scatter(title=f"{framed_col} not found")
+
+        fig = px.histogram(
+            df,
+            x=framed_col,
+            nbins=200,
+            title=f"{sensor} - Phone (Framed) Distribution",
+        )
+        fig.update_layout(height=320, margin=dict(t=40, b=30))
+        fig.update_yaxes(type="log")
         return fig

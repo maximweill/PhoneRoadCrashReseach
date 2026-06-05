@@ -10,18 +10,14 @@ from ..core import Context
 # =========================================================
 
 def compute_sampling_rate_stats(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
-    time_col = "Time (s)" if "Time (s)" in df.columns else "time_ns"
-    if time_col not in df.columns:
+    if "Time (s)" not in df.columns:
         return df, ctx
     
-    t = df[time_col].to_numpy()
+    t = df["Time (s)"].to_numpy()
     if len(t) < 2:
         return df, ctx
         
     diffs = np.diff(t)
-    if time_col == "time_ns":
-        diffs = diffs * 1e-9
-        
     diffs = diffs[diffs > 0]
     if len(diffs) == 0:
         return df, ctx
@@ -71,28 +67,45 @@ def compute_sensor_max_stats(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFra
             ctx[f"max_{col}"] = max(df[col].max(), -df[col].min())
     return df, ctx
 
+def compute_duration(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
+    if "Time (s)" not in df.columns:
+        print("- Missing Time (s)")
+        return df, ctx
+    
+    ctx["duration"] = df["Time (s)"].max() - df["Time (s)"].min()
+    
+    return df, ctx
+
 def create_characteristics_summary(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
-    # 1. Extract phone id from filename if not already present in ctx
+    # 1. Extract phone id from metadata or filename if not already present in ctx
     if "phone_id" not in ctx:
-        match = re.search(r"(Phone\d+)", ctx["input_path"].name)
-        ctx["phone_id"] = match.group(1) if match else "Unknown"
+        metadata = ctx.get("metadata", {})
+        if "phone_id" in metadata:
+            ctx["phone_id"] = metadata["phone_id"]
+        else:
+            match = re.search(r"(Phone\d+)", ctx["input_path"].name)
+            ctx["phone_id"] = match.group(1) if match else "Unknown"
 
     # Define standard metrics we want to keep from the top-level context
     characteristics_keys = [
-        "phone_id", "fs_mean", "fs_median", "fs_iqr", 
-        "battery_temp_c_mean", "battery_temp_c_median", "battery_temp_c_iqr", 
+        "phone_id","duration", "fs_mean", "fs_median", "fs_iqr", 
+        "battery_temp_c_mean", "battery_temp_c_median", "battery_temp_c_iqr",
         "initial_magX_uT", "initial_magY_uT", "initial_magZ_uT"
     ]
-    
+
     # This is the ONLY dictionary we will use to build the DataFrame row
     final_row = {}
-    
+
     final_row["input_path"] = ctx["input_path"]
-    
+
     # 2. Extract individual metadata dictionary items as independent top-level columns
     metadata = ctx.get("metadata", {})
     for meta_key, meta_val in metadata.items():
         final_row[meta_key] = meta_val  # Becomes independent columns: 'Device', 'Date', etc.
+
+    # Ensure Device is present for headform to avoid crashes in aggregation
+    if ctx.get("phone_id") == "Headform" and "Device" not in final_row:
+        final_row["Device"] = "JLR Headform"
 
     # 3. Pull explicitly allowed characteristics from top-level ctx
     for key in characteristics_keys:
@@ -106,18 +119,25 @@ def create_characteristics_summary(df: pd.DataFrame, ctx: Context) -> tuple[pd.D
 
     return df, final_row
 
+def _mode_or_nan(x):
+    m = x.dropna().mode()
+    return m.iloc[0] if not m.empty else np.nan
 def aggregate_characteristics_by_phone(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
     """
     Groups the collected characteristics by Phone ID and applies aggregation rules.
     """
-    print("Aggregating characteristics by Phone ID...")
+    # print("Aggregating characteristics by Phone ID...")
     
     if "phone_id" not in df.columns:
-        print("NO PHONE ID in individual char")
+        ctx.setdefault("errors", [])
+        ctx["errors"].append("NO PHONE ID in individual char")
         return df, ctx
         
-    avg_metrics = ["fs_mean", "fs_median", "fs_iqr", 
-                   "battery_temp_c_mean", "battery_temp_c_median", "battery_temp_c_iqr"]
+    avg_metrics = [
+        "fs_mean", "fs_median", "fs_iqr", 
+        "battery_temp_c_mean", "battery_temp_c_median",
+        "battery_temp_c_iqr","duration"
+    ]
     
     # Metadata columns we want to grab the most common string value (the mode)
     metadata_cols = ["Device", "Accelerometer", "Gyroscope", "Magnetometer", "Date"]
@@ -135,8 +155,7 @@ def aggregate_characteristics_by_phone(df: pd.DataFrame, ctx: Context) -> tuple[
         
     for col in metadata_cols:
         if col in df.columns:
-            agg_rules[col] = lambda x: x.dropna().mode().iloc[0] if not x.dropna().mode().empty else np.nan
-
+            agg_rules[col] = _mode_or_nan
     # Group by the phone_id column
     df_aggregated = df.groupby("phone_id").agg(agg_rules).reset_index()
     
@@ -152,7 +171,8 @@ def add_phyphox_data(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Cont
     """
     phyphox_path = Path("phyphox_data/fast_data/devices.parquet")
     if not phyphox_path.exists():
-        print(f"Warning: Phyphox data not found at {phyphox_path}")
+        ctx.setdefault("errors", [])
+        ctx["errors"].append(f"Phyphox data not found at {phyphox_path}")
         return df, ctx
 
     phyphox_df = pd.read_parquet(phyphox_path)
@@ -175,7 +195,8 @@ def add_phyphox_data(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Cont
         if "Model" in df.columns:
             df = df.drop(columns=["model"])
     else:
-        print("Warning: 'Device' column not found in characteristics. Cannot join with Phyphox data.")
+        ctx.setdefault("errors", [])
+        ctx["errors"].append("Device column not found in characteristics. Cannot join with Phyphox data.")
 
     return df, ctx
 
@@ -185,12 +206,13 @@ def resample_reference(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Co
     Target frequency is looked up from phone_characteristics_aggregated.csv.
     Uses linear interpolation.
     """
+    ctx.setdefault("errors", [])
     chars_path = ctx.get("phone_characteristics_aggregated")
     if not chars_path:
         return df, ctx
 
     if not chars_path.exists():
-        print(f"Warning: Characteristics file not found at {chars_path}")
+        ctx["errors"].append(f"Characteristics file not found at {chars_path}")
         return df, ctx
 
     chars_df = pd.read_csv(chars_path)
@@ -199,7 +221,7 @@ def resample_reference(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Co
     filename = ctx["input_path"].name
     match = re.search(r"(Phone\d+)", filename)
     if not match:
-        print(f"Warning: Could not extract Phone ID from {filename}")
+        ctx["errors"].append(f"Could not extract Phone ID from {filename}")
         return df, ctx
 
     phone_id = match.group(1)
@@ -207,7 +229,7 @@ def resample_reference(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Co
     # Get target frequency
     phone_info = chars_df[chars_df["phone_id"] == phone_id]
     if phone_info.empty:
-        print(f"Warning: No characteristics found for {phone_id} in {chars_path}")
+        ctx["errors"].append(f"No characteristics found for {phone_id} in {chars_path}")
         return df, ctx
 
     fs = phone_info["fs_median"].iloc[0]

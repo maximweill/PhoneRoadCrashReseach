@@ -13,31 +13,32 @@ from ..core import Context
 # =========================================================
 def reset_index(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
     df_rest = df.reset_index(drop=True)
-    ctx["bug"] = [] #create a bugs catcher
+    ctx.setdefault("errors", []) 
     return df_rest, ctx 
 
 def ignore_saturated(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
     """
     Identifies and masks saturated sensor readings based on device-specific ranges.
     """
+    ctx.setdefault("errors", [])
     # 0. Find the characteristics file
     # Fully rely on the drop characteristics file
     chars_path = Path("data_processing_gitignore/phone_characteristics/aggregated/characteristics_drops.csv")
             
     if not chars_path.exists():
-        print(f"Warning: Characteristics file not found at {chars_path}. Skipping ignore_saturated.")
+        ctx["errors"].append(f"Characteristics file not found at {chars_path}. Skipping ignore_saturated.")
         return df, ctx
 
     # 1. Extract phone_id from filename
     input_path = ctx.get("input_path")
     if not input_path:
-        print("Warning: input_path not found in context. Skipping ignore_saturated.")
+        ctx["errors"].append("input_path not found in context. Skipping ignore_saturated.")
         return df, ctx
         
     filename = input_path.name
     match = re.search(r"(Phone\d+)", filename)
     if not match:
-        print(f"Warning: Could not extract Phone ID from {filename}. Skipping ignore_saturated.")
+        ctx["errors"].append(f"Could not extract Phone ID from {filename}. Skipping ignore_saturated.")
         return df, ctx
     phone_id = match.group(1)
 
@@ -45,7 +46,7 @@ def ignore_saturated(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Cont
     chars_df = pd.read_csv(chars_path)
     phone_info = chars_df[chars_df["phone_id"] == phone_id]
     if phone_info.empty:
-        print(f"Warning: No characteristics found for {phone_id} in {chars_path}. Skipping ignore_saturated.")
+        ctx["errors"].append(f"No characteristics found for {phone_id} in {chars_path}. Skipping ignore_saturated.")
         return df, ctx
 
     # 3. Get ranges (handling potential NaNs)
@@ -53,7 +54,7 @@ def ignore_saturated(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Cont
     gyro_range = phone_info["gyroscope_range"].iloc[0]
     
     if pd.isna(acc_range) or pd.isna(gyro_range):
-        print(f"Warning: Missing range data for {phone_id}. Skipping ignore_saturated.")
+        ctx["errors"].append(f"Missing range data for {phone_id}. Skipping ignore_saturated.")
         return df, ctx
 
     # 4. Define thresholds (using a 2% tolerance to account for near-saturation effects)
@@ -191,7 +192,7 @@ def compute_icc(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
 
             # Check if columns actually exist in the DataFrame
             if ref_col not in df.columns or framed_col not in df.columns:
-                ctx["bug"].append(f"Skipped {col}: Matching ref/framed columns not found.")
+                ctx["errors"].append(f"Skipped {col}: Matching ref/framed columns not found.")
                 continue
 
             # Pairwise drop NaNs
@@ -199,7 +200,7 @@ def compute_icc(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
             n = valid_mask.sum()
             
             if n < 2:
-                ctx["bug"].append(f"icc failed {col}: Insufficient data points (n={n}).")
+                ctx["errors"].append(f"icc failed {col}: Insufficient data points (n={n}).")
                 continue
 
             x = df.loc[valid_mask, ref_col].to_numpy()
@@ -207,7 +208,7 @@ def compute_icc(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
 
             # Pre-flight check: Zero variance breaks matrix math
             if np.var(x) == 0 and np.var(y) == 0:
-                ctx["bug"].append(f"icc failed {col}: Zero variance in signals (n={n}).")
+                ctx["errors"].append(f"icc failed {col}: Zero variance in signals (n={n}).")
                 continue
 
             # --- build long format ---
@@ -228,14 +229,14 @@ def compute_icc(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
                         ratings="values"
                     )
                 except Exception as e:
-                    ctx["bug"].append(f"icc failed {col}: Pingouin exception -> {str(e)}")
+                    ctx["errors"].append(f"icc failed {col}: Pingouin exception -> {str(e)}")
                     continue
 
             icc_row = icc_result[icc_result["Type"].isin(["ICC(A,1)", "ICC(A,k)"])]
 
             if icc_row.empty:
                 warning_msg = f" ({w[0].message})" if w else ""
-                ctx["bug"].append(f"icc failed {col}: 'ICC(A,1)'/'ICC(A,k)' missing from output{warning_msg}.")
+                ctx["errors"].append(f"icc failed {col}: 'ICC(A,1)'/'ICC(A,k)' missing from output{warning_msg}.")
                 continue
 
             # 'ICC' remains the same, but 'CI95%' is now 'CI95'
@@ -243,7 +244,7 @@ def compute_icc(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
             ci95 = icc_row.iloc[0]["CI95"] 
 
             if np.isnan(icc_value):
-                ctx["bug"].append(f"icc failed {col}: Result is NaN.")
+                ctx["errors"].append(f"icc failed {col}: Result is NaN.")
                 continue
 
             ctx[f"{stem}_icc"] = icc_value

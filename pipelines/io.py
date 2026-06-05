@@ -200,6 +200,22 @@ def save_stationary(df: pd.DataFrame, context: Context, both = False) -> list[Pa
 
     return save_single_csv(df,context)
 
+def save_headform_stationary(df: pd.DataFrame, context: Context) -> list[Path]:
+    output_dir: Path = context["output_dir"]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    metadata = context.get("metadata", {})
+    # Expecting 'Test Date' like '15/05/2026' and 'Test Time' like '14:38:07'
+    date = metadata.get("Test Date", "unknown").replace("/", "")
+    time = metadata.get("Test Time", "unknown").replace(":", "")
+    phone_id = metadata.get("phone_id", "Headform")
+    
+    out_name = f"both_stationary_{date}_{time}_{phone_id}.csv"
+    out_path = output_dir / out_name
+    context["output_path"] = out_path
+    
+    return save_single_csv(df, context)
+
 def save_allan_variance(df: pd.DataFrame, context: Context) -> list[Path]:
     """
     Saves the Allan variance results with an '_allan.csv' suffix.
@@ -249,6 +265,49 @@ def null_saver(df: pd.DataFrame, context: Context) -> list[Path]:
 # Logging SAVERS
 # =========================================================
 
+
+def load_headform_csv(input_path: Path, context: Context):
+    metadata = {}
+    data_start_row = None
+
+    with open(input_path, "r", encoding="utf-8") as f:
+        for i, line in enumerate(f):
+            if "Data Starts Here" in line:
+                data_start_row = i
+                break
+            if "," in line:
+                parts = line.split(",")
+                if len(parts) >= 2:
+                    key = parts[0].strip()
+                    val = parts[1].strip()
+                    if key:
+                        metadata[key] = val
+
+    if data_start_row is None:
+        raise ValueError(f"Could not find 'Data Starts Here' in {input_path}")
+
+    # Read the header row separately to get cleaned column names
+    df_headers = pd.read_csv(input_path, skiprows=data_start_row + 1, nrows=0)
+    col_names = df_headers.columns.str.strip().tolist()
+
+    # Read data rows
+    df = pd.read_csv(
+        input_path, 
+        skiprows=data_start_row + 2, 
+        header=None, 
+        names=col_names, 
+        engine='c'
+    )
+
+    # Clean up any trailing empty columns
+    df = df.loc[:, ~df.columns.str.contains("^Unnamed", case=False, na=False)]
+    df = df.dropna(axis=1, how="all")
+
+    context["input_path"] = input_path
+    context["metadata"] = metadata
+    context["metadata"]["phone_id"] = "Headform"
+
+    return df, context
 
 def load_raw_log_csv(path: Path, ctx: Context):
     # IMPORTANT: logs are messy, so we avoid strict parsing

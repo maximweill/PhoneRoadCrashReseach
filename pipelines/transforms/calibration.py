@@ -13,8 +13,9 @@ def compute_6axis_calibration(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFr
     Computes 6-axis calibration parameters for accelerometer and gyroscope.
     Expects 'axis' column with labels: x, -x, y, -y, z, -z
     """
+    ctx.setdefault("errors", [])
     if "axis" not in df.columns:
-        print(f"Warning: 'axis' column missing in {ctx.get('input_path', 'unknown file')}")
+        ctx["errors"].append(f"axis column missing in {ctx.get('input_path', 'unknown file')}")
         return df, ctx
 
     accel_cols = ["LinAccX (m/s2)", "LinAccY (m/s2)", "LinAccZ (m/s2)"]
@@ -23,7 +24,7 @@ def compute_6axis_calibration(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFr
     # Ensure columns exist
     for col in accel_cols + gyro_cols:
         if col not in df.columns:
-            print(f"Warning: Column {col} missing in {ctx.get('input_path', 'unknown file')}")
+            ctx["errors"].append(f"Column {col} missing in {ctx.get('input_path', 'unknown file')}")
             return df, ctx
 
     # Group by axis and compute means
@@ -41,16 +42,14 @@ def compute_6axis_calibration(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFr
         pos_label = ax.lower()
         neg_label = "-" + ax.lower()
         if pos_label not in axis_means.index:
-            print(f"Warning: Missing axis for axis {pos_label} in {ctx.get('input_path', 'unknown file')}")
-            print(df["axis"].unique())
-            print(axis_means.columns)
+            ctx["errors"].append(f"Missing axis for axis {pos_label} in {ctx.get('input_path', 'unknown file')}")
+            # ctx["errors"].append(f"Available axes: {df['axis'].unique()}")
             params[f"LinAcc{ax}_offset"] = np.nan
             params[f"LinAcc{ax}_scale"] = np.nan
             continue
         if neg_label not in axis_means.index:
-            print(f"Warning: Missing axis for axis {neg_label} in {ctx.get('input_path', 'unknown file')}")
-            print(df["axis"].unique())
-            print(axis_means.columns)
+            ctx["errors"].append(f"Missing axis for axis {neg_label} in {ctx.get('input_path', 'unknown file')}")
+            # ctx["errors"].append(f"Available axes: {df['axis'].unique()}")
             params[f"LinAcc{ax}_offset"] = np.nan
             params[f"LinAcc{ax}_scale"] = np.nan
             continue

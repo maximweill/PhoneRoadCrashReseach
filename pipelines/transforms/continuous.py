@@ -166,7 +166,7 @@ def choose_axis_group(
     start = 0
     end = len(df)-1
 
-    ctx["missing"] = []
+    ctx.setdefault("errors", [])
 
     classification = {
         "x": [], "-x": [],
@@ -218,7 +218,7 @@ def choose_axis_group(
             ori_start, ori_end = int(params["start"]),int(params["end"])
             df.iloc[ori_start:ori_end, col_idx] = ori
         else:
-            ctx["missing"].append(ori)
+            ctx["errors"].append(f"Missing orientation: {ori}")
 
     #for debugging
     ctx["chosen"] = {key:pd.DataFrame([d]).astype(int) for key,d in chosen.items()}

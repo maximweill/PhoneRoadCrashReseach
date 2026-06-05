@@ -264,7 +264,8 @@ def tested_phone_characteristics_page():
         ),
     )
 
-
+def _get_stem(x):
+    return Path(x).stem if isinstance(x, str) else x
 def _load_sensor_data(phone_id: str | None, sensor: str, phase: str) -> pd.DataFrame:
     if not phone_id or phone_id == "None" or STATIONARY_INDEX.empty:
         return pd.DataFrame()
@@ -291,7 +292,7 @@ def _load_sensor_data(phone_id: str | None, sensor: str, phase: str) -> pd.DataF
             if not df.empty:
                 df["file"] = row["file_name"]
                 if "file" in df.columns and df["file"].dtype == object:
-                    df["file"] = df["file"].apply(lambda x: Path(x).stem if isinstance(x, str) else x)
+                    df["file"] = df["file"].map(_get_stem)
                 else:
                     df["file"] = Path(row["file_name"]).stem
                 df["phase"] = phase.capitalize()

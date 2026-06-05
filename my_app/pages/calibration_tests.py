@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from shiny import reactive, render, ui
 from shinywidgets import output_widget, render_plotly
+from scipy.stats import pearsonr
 
 from .standard_filter import (
     DATA_DIR,
@@ -98,6 +99,31 @@ def calibration_tests_page():
                 col_widths=[6, 6],
                 fill=False,
             ),
+            # Row 1: Side-by-Side Plots
+            ui.layout_columns(
+                ui.card(
+                    ui.card_header("Accelerometer Scale Factor vs. Prior Impact Speed"),
+                    output_widget("cal_params_vs_speed_plot"),
+                    full_screen=True,
+                ),
+                ui.card(
+                    ui.card_header("Accelerometer Zero-Bias Offsets vs. Prior Impact Speed"),
+                    output_widget("cal_bias_vs_speed_plot"),
+                    full_screen=True,
+                ),
+                col_widths=[6, 6],
+                fill=False,
+            ),
+            # Row 2: Full-width Summary Table
+            ui.layout_columns(
+                ui.card(
+                    ui.card_header("Impact Sensitivity Regression Summary (Pearson r & p-values)"),
+                    ui.output_table("cal_stats_summary_table"),
+                    full_screen=True,
+                ),
+                col_widths=[12],
+                fill=False,
+            ),
             ui.accordion(
                 ui.accordion_panel(
                     "Accelerometer Components",
@@ -178,6 +204,9 @@ def _plot_dimension(df: pd.DataFrame, col: str, label: str):
     return fig
 
 def register_calibration_tests_server(input, output, session):
+
+
+
     @reactive.calc
     @reactive.event(input.update_cal_plots, ignore_none=False)
     def selected_index():
@@ -223,6 +252,78 @@ def register_calibration_tests_server(input, output, session):
                 print(f"DEBUG: Calibration data file not found: {path.as_posix()}")
         
         return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+    @reactive.calc
+    def cal_regression_metrics():
+        """
+        Calculates all linear regression (OLS) and Pearson statistics once 
+        and shares the cached result with both plots and the summary table.
+        """
+        import pandas as pd
+        params = selected_parameters()
+        if params.empty or "measured_speed_mps" not in params.columns:
+            return {}
+
+        target_columns = [
+            "LinAccX_scale", "LinAccY_scale", "LinAccZ_scale",
+            "LinAccX_offset", "LinAccY_offset", "LinAccZ_offset"
+        ]
+        
+        # Structure: {(phone_id, column_name): {metrics_dict}}
+        metrics_cache = {}
+        
+        for phone_id in sorted(params["phone_id"].unique()):
+            pdf = params[params["phone_id"] == phone_id]
+            # Focus strictly on post-impact points (speed > 0)
+            pdf_impacts = pdf[pdf["measured_speed_mps"] > 0]
+            
+            for col in target_columns:
+                df_sub = pdf_impacts[[col, "measured_speed_mps"]].dropna()
+
+                # Remove extreme outliers using 10 * MAD
+                if len(df_sub) > 2:
+                    median = df_sub[col].median()
+                    mad = np.median(np.abs(df_sub[col] - median))
+
+                    if mad > 0:
+                        df_sub = df_sub[
+                            np.abs(df_sub[col] - median) <= 10 * mad
+                        ]
+
+                # Default fallback values if data is sparse
+                stats = {
+                    "n": len(df_sub),
+                    "r_val": None, "p_val": None,
+                    "slope": None, "intercept": None,
+                    "x_min": None, "x_max": None
+                }
+
+                if len(df_sub) > 2 and df_sub["measured_speed_mps"].nunique() > 1:
+                    try:
+                        # 1. Pearson Correlation
+                        r_val, p_val = pearsonr(
+                            df_sub["measured_speed_mps"],
+                            df_sub[col]
+                        )
+                        stats["r_val"] = r_val
+                        stats["p_val"] = p_val
+
+                        # 2. OLS Trendline Fit
+                        m, c = np.polyfit(
+                            df_sub["measured_speed_mps"],
+                            df_sub[col],
+                            1
+                        )
+                        stats["slope"] = m
+                        stats["intercept"] = c
+                        stats["x_min"] = df_sub["measured_speed_mps"].min()
+                        stats["x_max"] = df_sub["measured_speed_mps"].max()
+                    except Exception:
+                        pass
+
+                metrics_cache[(phone_id, col)] = stats
+                
+        return metrics_cache
 
     @output
     @render_plotly
@@ -274,7 +375,7 @@ def register_calibration_tests_server(input, output, session):
             fig.update_yaxes(title_text=col_y, row=1, col=i+1)
 
         fig.update_layout(
-            height=500, title_text="Accelerometer Pairings",
+            height=500, 
             coloraxis=dict(colorscale='Viridis', colorbar=dict(title="Time")),
             legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5)
         )
@@ -339,7 +440,7 @@ def register_calibration_tests_server(input, output, session):
             fig.update_yaxes(title_text=oy_col.replace("_offset", ""), row=1, col=i+1)
 
         fig.update_layout(
-            height=500, title_text="Accelerometer Calibration Parameters",
+            height=500,
             coloraxis=dict(colorscale='Viridis', colorbar=dict(title="Time")),
             legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5)
         )
@@ -384,6 +485,162 @@ def register_calibration_tests_server(input, output, session):
         return fig
 
     @output
+    @render_plotly
+    def cal_params_vs_speed_plot():
+        params = selected_parameters()
+        if params.empty:
+            return go.Figure().update_layout(title="No data available")
+
+        fig = make_subplots(
+            rows=1, cols=3, 
+            subplot_titles=("LinAccX Scale", "LinAccY Scale", "LinAccZ Scale")
+        )
+        
+        scale_cols = ["LinAccX_scale", "LinAccY_scale", "LinAccZ_scale"]
+        metrics = cal_regression_metrics()
+        
+        for i, col in enumerate(scale_cols):
+            for phone_id in sorted(params["phone_id"].unique()):
+                pdf = params[params["phone_id"] == phone_id]
+                symbol = PHONE_SYMBOLS.get(phone_id, "circle")
+                
+                # Scatter points
+                fig.add_trace(
+                    go.Scatter(
+                        x=pdf["measured_speed_mps"], y=pdf[col],
+                        mode='markers', name=phone_id,
+                        legendgroup=phone_id, showlegend=(i == 0),
+                        marker=dict(symbol=symbol, size=7, opacity=0.8)
+                    ),
+                    row=1, col=i+1
+                )
+                
+                # Retrieve OLS data from the reactive cache
+                stats = metrics.get((phone_id, col), {})
+                if stats.get("slope") is not None:
+                    x_range = np.linspace(stats["x_min"], stats["x_max"], 100)
+                    y_range = stats["slope"] * x_range + stats["intercept"]
+                    fig.add_trace(
+                        go.Scatter(
+                            x=x_range, y=y_range,
+                            mode='lines', name=f"{phone_id} Trend",
+                            legendgroup=f"{phone_id}_trendline", showlegend=(i == 0),
+                            line=dict(dash='dash', width=1.5),
+                        ),
+                        row=1, col=i+1
+                    )
+            
+            fig.update_xaxes(title_text="Speed (m/s)", row=1, col=i+1)
+            fig.update_yaxes(title_text="Scale Factor", row=1, col=i+1)
+            
+        fig.update_layout(
+            height=380, margin=dict(t=40, b=40, l=40, r=40),
+            legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5)
+        )
+        return fig
+
+
+
+    @output
+    @render_plotly
+    def cal_bias_vs_speed_plot():
+        params = selected_parameters()
+        if params.empty:
+            return go.Figure().update_layout(title="No data available")
+
+        fig = make_subplots(
+            rows=1, cols=3, 
+            subplot_titles=("LinAccX Offset", "LinAccY Offset", "LinAccZ Offset")
+        )
+        
+        offset_cols = ["LinAccX_offset", "LinAccY_offset", "LinAccZ_offset"]
+        metrics = cal_regression_metrics()
+        
+        for i, col in enumerate(offset_cols):
+            for phone_id in sorted(params["phone_id"].unique()):
+                pdf = params[params["phone_id"] == phone_id]
+                symbol = PHONE_SYMBOLS.get(phone_id, "circle")
+                
+                # Scatter points
+                fig.add_trace(
+                    go.Scatter(
+                        x=pdf["measured_speed_mps"], y=pdf[col],
+                        mode='markers', name=phone_id,
+                        legendgroup=phone_id, showlegend=(i == 0),
+                        marker=dict(symbol=symbol, size=7, opacity=0.8)
+                    ),
+                    row=1, col=i+1
+                )
+                
+                # Retrieve OLS data from the reactive cache
+                stats = metrics.get((phone_id, col), {})
+                if stats.get("slope") is not None:
+                    x_range = np.linspace(stats["x_min"], stats["x_max"], 100)
+                    y_range = stats["slope"] * x_range + stats["intercept"]
+                    fig.add_trace(
+                        go.Scatter(
+                            x=x_range, y=y_range,
+                            mode='lines', name=f"{phone_id} Trend",
+                            legendgroup=f"{phone_id}_trendline", showlegend=(i == 0),
+                            line=dict(dash='dash', width=1.5),
+                        ),
+                        row=1, col=i+1
+                    )
+            
+            fig.update_xaxes(title_text="Speed (m/s)", row=1, col=i+1)
+            fig.update_yaxes(title_text="Offset (m/s²)", row=1, col=i+1)
+            
+        fig.update_layout(
+            height=380, margin=dict(t=40, b=40, l=40, r=40),
+            legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5)
+        )
+        return fig
+
+
+    @output
+    @render.table
+    def cal_stats_summary_table():
+        import pandas as pd
+        params = selected_parameters()
+        metrics = cal_regression_metrics()
+        
+        if not metrics:
+            return pd.DataFrame({"Status": ["No data available to calculate metrics"]})
+            
+        target_columns = [
+            "LinAccX_scale", "LinAccY_scale", "LinAccZ_scale",
+            "LinAccX_offset", "LinAccY_offset", "LinAccZ_offset"
+        ]
+        
+        records = []
+        
+        for phone_id in sorted(params["phone_id"].unique()):
+            for col in target_columns:
+                stats = metrics.get((phone_id, col), {})
+                
+                r_val = stats.get("r_val")
+                p_val = stats.get("p_val")
+                
+                # Format string representations
+                if r_val is not None:
+                    r_str = f"{r_val:.3f}"
+                    p_str = f"{p_val:.3e}" if p_val < 0.001 else f"{p_val:.4f}"
+                    sig_flag = " * (Significant)" if p_val < 0.05 else ""
+                else:
+                    r_str, p_str, sig_flag = "N/A", "N/A", ""
+                    
+                param_display = col.replace("LinAcc", "Linear Accel ").replace("_", " ")
+                
+                records.append({
+                    "Phone ID": phone_id,
+                    "Calibration Parameter": param_display,
+                    "Sample Size (N)": stats.get("n", 0),
+                    "Pearson Correlation (r)": r_str,
+                    "p-value": f"{p_str}{sig_flag}"
+                })
+                
+        return pd.DataFrame(records)
+
     @render_plotly
     def cal_accel_x_plot():
         return _plot_dimension(calibration_data(), "LinAccX (m/s2)", "X (m/s2)")

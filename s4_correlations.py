@@ -9,7 +9,7 @@ if __name__ == '__main__':
 
     print("Running correlation parameter analysis with saturation ignoring...")
     
-    agreement_results = ppl.run_directory(
+    agreement_results = ppl.run_directory_parallel(
         pipeline=ppl.definitions.CORRELATION_PARAMETERS,
         src_dir=Path("data_processing_gitignore/phone_drop_test_data/correlation"),
         output_dir=individual_dir,

@@ -97,18 +97,6 @@ def generate_quick_lookups(output_dir: Path) -> None:
     """Main entry point to generate all lookup tables."""
     print(f"Generating quick lookups in {output_dir}...")
     
-    # Sources are within the webapp data directory (parquet files)
-    drop_srcs = {
-        "framed": WEBAPP_DATA_DIR / "phone_drop_test_data_parquet" / "phone_framed",
-        "reference": WEBAPP_DATA_DIR / "phone_drop_test_data_parquet" / "phone_reference_signals"
-    }
-    
-    drop_log_path = Path("data_processing_gitignore/lookup_tables/data_collection_log.csv")
-    if drop_log_path.exists():
-        drop_log_df = pd.read_csv(drop_log_path)
-        index_with_cleaned_logs(drop_log_df, "drop_file_index", drop_srcs, output_dir)
-    else:
-        print(f"   Error: Drop log not found at {drop_log_path}")
 
     calib_srcs = {
         "framed": WEBAPP_DATA_DIR / "6axis_calibration" / "framed"
@@ -120,6 +108,45 @@ def generate_quick_lookups(output_dir: Path) -> None:
         index_with_cleaned_logs(calib_log_df, "calib_index", calib_srcs, output_dir)
     else:
         print(f"   Error: Calibration log not found at {calib_log_path}")
+
+
+
+
+    # Sources are within the webapp data directory (parquet files)
+    drop_srcs = {
+        "framed": WEBAPP_DATA_DIR / "phone_drop_test_data_parquet" / "phone_framed",
+        "reference": WEBAPP_DATA_DIR / "phone_drop_test_data_parquet" / "phone_reference_signals"
+    }
+
+    psd_srcs = {
+        "framed": WEBAPP_DATA_DIR / "drop_psd" / "framed",
+        "reference": WEBAPP_DATA_DIR / "drop_psd" / "reference",
+        "headform": WEBAPP_DATA_DIR / "drop_psd" / "headform",
+    }
+
+    drop_log_path = Path(
+        "data_processing_gitignore/lookup_tables/data_collection_log.csv"
+    )
+
+    if drop_log_path.exists():
+        drop_log_df = pd.read_csv(drop_log_path)
+
+        index_with_cleaned_logs(
+            drop_log_df,
+            "drop_file_index",
+            drop_srcs,
+            output_dir,
+        )
+
+        index_with_cleaned_logs(
+            drop_log_df,
+            "drop_psd_index",
+            psd_srcs,
+            output_dir,
+        )
+    else:
+        print(f"   Error: Drop log not found at {drop_log_path}")
+    
 
 if __name__ == "__main__":
     generate_quick_lookups(

@@ -8,3 +8,4 @@ from .agreement import *
 from .allan import *
 from .calibration import *
 from .power_spectral_density import *
+from .anti_aliasing_filter import *

@@ -22,7 +22,7 @@ def metadata() -> pd.DataFrame:
 
 def manufacturers() -> list[str]:
     values = metadata()["manufacturers"].iloc[0].tolist()
-    return sorted(values, key=lambda value: str(value).lower())
+    return sorted(values, key=str.lower)
 
 
 def numeric_columns() -> list[str]:

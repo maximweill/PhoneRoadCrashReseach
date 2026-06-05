@@ -20,8 +20,18 @@ CATEGORIES = {
     "RotAcc": ["RotAccX (rad/s2)", "RotAccY (rad/s2)", "RotAccZ (rad/s2)", "RotAccRes (rad/s2)"]
 }
 
+def _choose(x,index,stringify=True):
+    if x[0] is not None:
+        if stringify:
+            return str(x[index])
+        else:
+            return x[index]
+    return None
+
 def load_processed_agreement() -> pd.DataFrame:
+    print("load_processed_agreement")
     if not AGREEMENT_PATH.exists():
+        print(f"No dir {AGREEMENT_PATH}")
         return pd.DataFrame()
     df = pd.read_parquet(AGREEMENT_PATH)
     
@@ -30,14 +40,15 @@ def load_processed_agreement() -> pd.DataFrame:
         match = re.match(r"(\d+)mps_(.*)_REPEAT(\d+)_(Phone\d+)", filename)
         if match:
             return match.groups()
+        print(f"No match found for {filename}")
         return None, None, None, None
 
     parsed = df["input_path"].apply(parse_path)
-    df["target_speed_mps_str"] = parsed.apply(lambda x: str(x[0]) if x[0] is not None else None)
-    df["config"] = parsed.apply(lambda x: x[1])
-    df["repeat_str"] = parsed.apply(lambda x: str(x[2]) if x[2] is not None else None)
-    df["phone_id"] = parsed.apply(lambda x: x[3])
-    
+    df["target_speed_mps_str"] = parsed.apply(_choose, index=0, stringify=True)
+    df["config"] = parsed.apply(_choose, index=1, stringify=False)
+    df["repeat_str"] = parsed.apply(_choose, index=2, stringify=True)
+    df["phone_id"] = parsed.apply(_choose, index=3, stringify=False)
+
     return df
 
 AGREEMENT_DF = load_processed_agreement()
@@ -78,6 +89,7 @@ def sensor_agreement_page():
                 col_widths=[8, 4],
                 fill=False, # Prevents this row from getting vertically squished
             ),
+            
             # --- Agreement Metrics Table ---
             ui.card(
                 ui.card_header("Agreement Metrics"),

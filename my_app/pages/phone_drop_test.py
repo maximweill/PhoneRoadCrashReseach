@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.express as px
 from shiny import reactive, render, ui
 from shinywidgets import output_widget, render_plotly
+from functools import partial
 
 from .standard_filter import (
     DROP_INDEX,
@@ -166,12 +167,32 @@ def _read_sample(path: Path | None, source: str, phone_id: str) -> pd.DataFrame:
 def _empty_plot(title: str):
     return px.scatter(title=title)
 
+def _break_on_time_reset(df,column, time_col):
+    df = df.sort_values(time_col).reset_index(drop=True)
+
+    reset = df[time_col].diff().fillna(0) < 0
+
+    # ONLY break plotted continuity
+    df.loc[reset, TIME_COLUMN] = float("nan")
+    df.loc[reset, column] = float("nan")
+
+    return df
 
 def _plot_component(df: pd.DataFrame, column: str):
     if df.empty:
         return _empty_plot("No data")
     if TIME_COLUMN not in df.columns or column not in df.columns:
         return _empty_plot(f"Column not found: {column}")
+    
+    df = df.groupby(
+        ["phone_id", "file", "source"],
+        group_keys=False,
+    ).apply(
+        partial(
+                _break_on_time_reset,
+                column=column,
+                time_col = TIME_COLUMN
+        ))
 
     fig = px.line(
         df,

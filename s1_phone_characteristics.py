@@ -33,6 +33,20 @@ if __name__ == "__main__":
         log_path=individual_dir / "end_characteristics_stationary.csv"
     )
 
+    # Headform
+    ppl.run_directory_parallel(
+        pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
+        src_dir=Path("data_processing_gitignore/stationary/headform/parsed"),
+        output_dir=individual_dir,
+        log_path=individual_dir / "headform_characteristics_stationary.csv"
+    )
+    ppl.run_directory_parallel(
+        pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
+        src_dir=Path("data_processing_gitignore/stationary/headform_filtered/parsed"),
+        output_dir=individual_dir,
+        log_path=individual_dir / "headform_filtered_characteristics_stationary.csv"
+    )
+
     # Calibration
     ppl.run_directory_parallel(
         pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
@@ -46,7 +60,7 @@ if __name__ == "__main__":
     
 
     print("Running final aggregation...")
-    ppl.run_directory(
+    ppl.run_directory_parallel(
         pipeline=ppl.definitions.CHARACTERISTICS_AGGREGATION_PIPELINE,
         src_dir=individual_dir,
         output_dir=Path("data_processing_gitignore/phone_characteristics/aggregated"),

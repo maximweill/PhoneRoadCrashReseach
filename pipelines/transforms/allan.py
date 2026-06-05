@@ -11,6 +11,7 @@ def calculate_allan_variance_transform(df: pd.DataFrame, ctx: Context,both = Fal
     """
     Computes Allan variance for relevant columns in the dataframe.
     """
+    ctx.setdefault("errors", [])
     filename = ctx["input_path"].name
 
     # Determine columns to analyze based on file prefix
@@ -27,7 +28,7 @@ def calculate_allan_variance_transform(df: pd.DataFrame, ctx: Context,both = Fal
     cols = [c for c in cols if c in df.columns]
 
     if not cols:
-        print(f"  Skipping {filename}: No relevant columns found.")
+        ctx["errors"].append(f"Skipping {filename}: No relevant columns found.")
         return None, ctx
 
     # Sampling interval
@@ -35,7 +36,7 @@ def calculate_allan_variance_transform(df: pd.DataFrame, ctx: Context,both = Fal
     dt = np.median(np.diff(t))
 
     if pd.isna(dt) or dt <= 0:
-        print(f"  Skipping {filename}: Invalid sampling interval (dt={dt}).")
+        ctx["errors"].append(f"Skipping {filename}: Invalid sampling interval (dt={dt}).")
         return None, ctx
 
     all_results = {}

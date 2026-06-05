@@ -24,11 +24,21 @@ def normalize_time_column(
     ctx: Context,
 ) -> tuple[pd.DataFrame, Context]:
 
-    if "time_ns" not in df.columns:
-        if "sensor_time_ns" in df.columns:
-            df = df.rename(columns={"sensor_time_ns": "time_ns"})
-        else:
-            raise ValueError("Missing time column")
+    if "Time (s)" in df.columns:
+        return df, ctx
+
+    # Phyphox raw output
+    if "sensor_time_ns" in df.columns:
+        df = df.rename(columns={"sensor_time_ns": "time_ns"})
+
+    if "time_ns" in df.columns:
+        df["Time (s)"] = df["time_ns"].astype(np.float64) / 1e9
+        df = df.drop(columns=["time_ns"])
+    elif "time" in df.columns:
+        df = df.rename(columns={"time": "Time (s)"})
+    
+    if "Time (s)" not in df.columns:
+        raise ValueError(f"Missing time column. Found columns: {df.columns.tolist()}")
 
     return df, ctx
 
@@ -48,13 +58,57 @@ def ensure_sensor_columns(
 
     return df, ctx
 
+def normalize_headform_columns(df: pd.DataFrame, ctx: Context) -> tuple[pd.DataFrame, Context]:
+    # Take inspiration from DEPRECATED_headform_parser.py
+    rename_map = {
+        'Chan 0:6DX0855-AV1': 'gyroZ_dps',
+        'Chan 1:6DX0855-AV2': 'gyroY_dps',
+        'Chan 2:6DX0855-AV3': 'gyroX_dps',
+        'Chan 3:6DX0855-AC1': 'accelZ_g',
+        'Chan 4:6DX0855-AC2': 'accelY_g',
+        'Chan 5:6DX0855-AC3': 'accelX_g',
+        'Time': 'Time (s)'
+    }
+    
+    # If the exact names are not found, try index-based as fallback
+    if not any(col in df.columns for col in rename_map.keys() if col != 'Time'):
+        mapping = {
+            0: "Time (s)",
+            1: "gyroZ_dps",
+            2: "gyroY_dps",
+            3: "gyroX_dps",
+            4: "accelZ_g",
+            5: "accelY_g",
+            6: "accelX_g"
+        }
+        new_cols = []
+        for i in range(len(df.columns)):
+            if i in mapping:
+                new_cols.append(mapping[i])
+            else:
+                new_cols.append(df.columns[i])
+        df.columns = new_cols
+    else:
+        df = df.rename(columns=rename_map)
+    
+    # Ensure all sensor columns are numeric
+    sensor_cols = [
+        'gyroZ_dps', 'gyroY_dps', 'gyroX_dps', 
+        'accelZ_g', 'accelY_g', 'accelX_g', 'Time (s)'
+    ]
+    for col in sensor_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+    return df, ctx
+
 def sort_by_time(
     df: pd.DataFrame,
     ctx: Context,
 ) -> tuple[pd.DataFrame, Context]:
 
-    if not df["time_ns"].is_monotonic_increasing:
-        df = df.sort_values("time_ns").reset_index(drop=True)
+    if not df["Time (s)"].is_monotonic_increasing:
+        df = df.sort_values("Time (s)").reset_index(drop=True)
 
     return df, ctx
 
@@ -129,7 +183,7 @@ def deduplicate(
     ctx: Context,
 ) -> tuple[pd.DataFrame, Context]:
 
-    keep = ~df["time_ns"].duplicated(keep="first")
+    keep = ~df["Time (s)"].duplicated(keep="first")
 
     removed = int((~keep).sum())
 
@@ -146,7 +200,7 @@ def convert_units(
     ctx: Context,
 ) -> tuple[pd.DataFrame, Context]:
 
-    t = df["time_ns"].to_numpy(dtype=np.float64) / 1e9
+    t = df["Time (s)"].to_numpy(dtype=np.float64)
 
     # Components only for vector math
     accel_vec = (
@@ -195,4 +249,3 @@ def convert_units(
     })
 
     return df, ctx
-

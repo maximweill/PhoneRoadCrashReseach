@@ -61,7 +61,10 @@ MIN_SAMPLE_SIZE = 10
 manufacturers = eligible_manufacturers_by_sample_size(df_raw, MIN_SAMPLE_SIZE)
 devices_data = df_raw[df_raw["manufacturer"].isin(manufacturers)]
 
-manufacturers = sorted(devices_data['manufacturer'].dropna().unique().tolist(), key=lambda s: s.lower())
+manufacturers = sorted(
+    devices_data["manufacturer"].dropna().unique().tolist(),
+    key=str.lower
+)
 numeric_cols = sorted(devices_data.select_dtypes(include='number').columns.tolist())
 
 
