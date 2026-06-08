@@ -184,15 +184,13 @@ def _plot_component(df: pd.DataFrame, column: str):
     if TIME_COLUMN not in df.columns or column not in df.columns:
         return _empty_plot(f"Column not found: {column}")
     
-    df = df.groupby(
-        ["phone_id", "file", "source"],
-        group_keys=False,
-    ).apply(
-        partial(
-                _break_on_time_reset,
-                column=column,
-                time_col = TIME_COLUMN
-        ))
+    df = (
+        df.groupby(["phone_id", "file", "source"])
+        .apply(
+            partial(_break_on_time_reset, column=column, time_col=TIME_COLUMN)
+        )
+        .reset_index()
+    )
 
     fig = px.line(
         df,
