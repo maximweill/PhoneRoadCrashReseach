@@ -156,11 +156,28 @@ STATIONARY_PARSING_PIPELINE_BOTH = Pipeline(
         ensure_sensor_columns,
         sort_by_time,
         convert_units,
+        add_magnitudes,
 
         trim_stationary,
         interpolate_outliers
     ],
-    saver=partial(save_stationary,both=True),
+    saver= partial(save_stationary,both=True),
+)
+
+STATIONARY_IND_PARSING_PIPELINE = Pipeline(
+    name="stationary",
+    loader=load_csv,
+    transforms=[
+        normalize_time_column,
+        rename_ind_colums,
+        add_rotational_acceleration,
+        add_magnitudes,
+        sort_by_time,
+        
+        trim_stationary,
+        interpolate_outliers
+    ],
+    saver=partial(save_stationary,both=False),
 )
 
 HEADFORM_STATIONARY_PIPELINE = Pipeline(
@@ -169,6 +186,7 @@ HEADFORM_STATIONARY_PIPELINE = Pipeline(
     transforms=[
         normalize_headform_columns,
         convert_units,
+        add_magnitudes,
         trim_stationary,
         interpolate_outliers
     ],
@@ -354,4 +372,21 @@ POWER_SPECTRAL_DENSITY_PIPELINE = Pipeline(
         calculate_psd_transform,
     ],
     saver=save_psd,
+)
+
+
+SIMPLE_SAMPLING_PLOT = Pipeline(
+    name="simple_sampling_plot",
+    loader=load_csv,
+    transforms=[
+    ],
+    saver=save_interactive_plot,
+)
+
+DOUBLED_SAMPLING_PLOT = Pipeline(
+    name="simple_sampling_plot",
+    loader=load_csv,
+    transforms=[
+    ],
+    saver=save_doubled_interactive_plot,
 )

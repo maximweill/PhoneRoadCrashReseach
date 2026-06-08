@@ -4,6 +4,58 @@ from typing import Dict, Any,Protocol
 import re
 from typing import Dict, Any, Protocol
 
+
+
+DATE_RE = re.compile(r"^\d{8}$")
+TIME_RE = re.compile(r"^\d{4,6}$")
+PHONE_RE = re.compile(r"^Phone(\d+)$", re.IGNORECASE)
+
+SENSOR_MAP = {
+    "accel": "accel",
+    "accelerometer": "accel",
+    "gyro": "gyro",
+    "gyroscope": "gyro",
+    "magn": "magn",
+    "magnetometer": "magn",
+}
+
+
+def parse_raw_filename(stem: str):
+    parts = stem.split("_")
+
+    sensor = None
+    date = None
+    time = None
+    phone_id = None
+    extras = []
+
+    for p in parts:
+        pl = p.lower()
+
+        # sensor
+        if pl in SENSOR_MAP:
+            sensor = SENSOR_MAP[pl]
+            continue
+
+        # date
+        if DATE_RE.match(p):
+            date = p
+            continue
+
+        # time
+        if TIME_RE.match(p):
+            time = p
+            continue
+
+        # phone id
+        if PHONE_RE.match(p):
+            phone_id = p
+            continue
+
+        extras.append(p)
+
+    return sensor, date, time, phone_id, extras
+
 def parse_convention(name: str) -> Dict[str, Any]:
     pattern = re.compile(
         r"^(?P<speed>[\d.]+)mps_"

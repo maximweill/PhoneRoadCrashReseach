@@ -24,7 +24,6 @@ app_ui = ui.page_navbar(
     header=ui.tags.style(EMPTY_CARD_CSS),
 )
 
-
 def server(input, output, session):
     register_tested_phone_characteristics_server(input, output, session)
     register_headform_characteristics_server(input, output, session)
