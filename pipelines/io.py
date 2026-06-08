@@ -179,36 +179,26 @@ def save_split_by_triggered(df: pd.DataFrame, context: Context) -> list[Path]:
 # =========================================================
 # FRAMING SAVERS
 # =========================================================
-from .naming import parse_raw_filename
 
-def save_stationary(
-    df: pd.DataFrame,
-    context: Context,
-    both: bool = False
-) -> list[Path]:
+def save_stationary(df: pd.DataFrame, context: Context, both = False) -> list[Path]:
 
     file: Path = context["input_path"]
     output_dir: Path = context["output_dir"]
 
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    sensor, date, time, phone_id, _ = parse_raw_filename(file.stem)
-
-    if not all([date, time, phone_id]):
-        raise ValueError(f"Invalid filename format: {file.stem}")
+    parts = file.stem.split("_")
 
     if not both:
-        if not sensor:
-            raise ValueError(f"Missing sensor in filename: {file.stem}")
+        sensor, _, date, time, phone_id = parts[:5]
         out_name = f"{sensor}_stationary_{date}_{time}_{phone_id}.csv"
     else:
+        _, date, time, phone_id = parts[:4]
         out_name = f"both_stationary_{date}_{time}_{phone_id}.csv"
-
     out_path = output_dir / out_name
-    context["output_path"] = out_path
 
-    return save_single_csv(df, context)
+    context["output_path"]=out_path
 
+    return save_single_csv(df,context)
 
 def save_headform_stationary(df: pd.DataFrame, context: Context) -> list[Path]:
     output_dir: Path = context["output_dir"]
@@ -325,196 +315,3 @@ def load_raw_log_csv(path: Path, ctx: Context):
 
     ctx["input_path"] = path
     return df, ctx
-
-
-
-# =========================================================
-# Plotly SAVERS
-# =========================================================
-
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import numpy as np
-
-def get_html_path(context:Context):
-    input_path: Path = context["input_path"]
-
-    if "output_path" in context:
-        output_path:Path = context["output_path"]
-    else:
-        output_dir: Path = context["output_dir"]
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{input_path.stem}.html"
-        
-    return output_path
-
-def save_interactive_plot(df:pd.DataFrame, ctx:Context):
-    time = df["Time (s)"].to_numpy()
-    dt = np.diff(time)
-    t_mid = time[1:]
-
-    # Create subplots (2 rows, 1 column)
-    fig = make_subplots(rows=2, cols=1, subplot_titles=(
-        "Sampling Interval (Δt) Density Spectrum", 
-        "Sampling Interval Distribution (log y)"
-    ))
-
-    # Top Plot: 2D Histogram
-    fig.add_trace(
-        go.Histogram2d(
-            x=t_mid, y=dt, 
-            nbinsx=120, nbinsy=120, 
-            colorscale='Jet',
-            cmin=1,
-            colorbar=dict(title="Density Count", len=0.45, y=0.75)
-        ),
-        row=1, col=1
-    )
-
-    # Bottom Plot: 1D Histogram (Log Scale)
-    fig.add_trace(
-        go.Histogram(
-            x=dt, 
-            nbinsx=100,
-            name="Δt distribution"
-        ),
-        row=2, col=1
-    )
-    
-    # Configure layouts and log scale for the bottom plot
-    fig.update_yaxes(type="log", row=2, col=1)
-    fig.update_xaxes(title_text="Time (s)", row=1, col=1)
-    fig.update_yaxes(title_text="Δt (ns)", row=1, col=1)
-    fig.update_xaxes(title_text="Δt (ns)", row=2, col=1)
-    fig.update_yaxes(title_text="Count (log)", row=2, col=1)
-    
-    fig.update_layout(height=800, width=1000, showlegend=False)
-
-    output_path = get_html_path(ctx)
-
-    fig.write_html(output_path, include_plotlyjs='cdn')
-    return [output_path]
-
-
-
-def save_doubled_interactive_plot(df:pd.DataFrame, ctx:Context):
-    accel_cols = ["LinAccelX (m/s)", "LinAccelY (m/s)", "LinAccelZ (m/s)"]
-    gyro_cols  = ["RotVelX (rad/s)", "RotVelY (rad/s)", "RotVelZ (rad/s)"]
-
-    time = df["Time (s)"].to_numpy()
-
-    # 1. Helper to keep only rows where sensor values change
-    def change_times(cols):
-        vals = df[cols].to_numpy(dtype=np.float32)
-        keep = np.ones(len(df), dtype=bool)
-        same = np.all(vals[1:] == vals[:-1], axis=1)
-        keep[1:] = ~same
-        return time[keep]
-
-    accel_times = change_times(accel_cols)
-    gyro_times  = change_times(gyro_cols)
-
-    # 2. Compute Δt
-    def inst_dt(t):
-        dt = np.diff(t)
-        t_mid = t[1:]
-        return dt, t_mid
-
-    accel_dt, accel_dt_t = inst_dt(accel_times)
-    gyro_dt, gyro_dt_t   = inst_dt(gyro_times)
-
-    # 3. Peak markers (scalar timestamp values)
-    t_max_accelZ = df.loc[df["accelZ_g"].idxmax(), "Time (s)"]
-    t_max_gyroX  = df.loc[df["gyroX_dps"].idxmax(), "Time (s)"]
-
-    # 4. Initialize a 2x2 grid layout
-    fig = make_subplots(
-        rows=2, cols=2, 
-        subplot_titles=(
-            "Accel Δt Density Spectrum", "Gyro Δt Density Spectrum",
-            "Accel Δt distribution (log y)", "Gyro Δt distribution (log y)"
-        ),
-        vertical_spacing=0.12,
-        horizontal_spacing=0.12
-    )
-
-    # =================================================
-    # TOP ROW: 2D Density Histograms
-    # =================================================
-    # Accel 2D Histogram (Row 1, Col 1)
-    fig.add_trace(
-        go.Histogram2d(
-            x=accel_dt_t, y=accel_dt, nbinsx=120, nbinsy=120, 
-            colorscale='Jet', cmin=1, name='Accel Density',
-            colorbar=dict(title="Accel Count", len=0.4, y=0.8, x=0.42, yanchor="center")
-        ),
-        row=1, col=1
-    )
-
-    # Gyro 2D Histogram (Row 1, Col 2)
-    fig.add_trace(
-        go.Histogram2d(
-            x=gyro_dt_t, y=gyro_dt, nbinsx=120, nbinsy=120, 
-            colorscale='Jet', cmin=1, name='Gyro Density',
-            colorbar=dict(title="Gyro Count", len=0.4, y=0.8, x=1.02, yanchor="center")
-        ),
-        row=1, col=2
-    )
-
-    # =================================================
-    # BOTTOM ROW: 1D Δt distributions (Log)
-    # =================================================
-    # Accel 1D (Row 2, Col 1)
-    fig.add_trace(
-        go.Histogram(x=accel_dt, nbinsx=100, marker=dict(color='#1f77b4'), name="Accel Count"),
-        row=2, col=1
-    )
-
-    # Gyro 1D (Row 2, Col 2)
-    fig.add_trace(
-        go.Histogram(x=gyro_dt, nbinsx=100, marker=dict(color='#ff7f0e'), name="Gyro Count"),
-        row=2, col=2
-    )
-
-    # =================================================
-    # Add Vertical Peak Lines to Top Plots
-    # =================================================
-    # Accel Max Line
-    fig.add_vline(x=t_max_accelZ, line_width=1.5, line_dash="dash", line_color="black", row=1, col=1)
-    # Replicate original legend entry behavior by adding an empty proxy trace
-    fig.add_trace(go.Scatter(x=[None], y=[None], mode='lines', line=dict(color='black', dash='dash'), name='max accelZ'), row=1, col=1)
-
-    # Gyro Max Line
-    fig.add_vline(x=t_max_gyroX, line_width=1.5, line_dash="dash", line_color="black", row=1, col=2)
-    fig.add_trace(go.Scatter(x=[None], y=[None], mode='lines', line=dict(color='black', dash='dash'), name='max gyroX'), row=1, col=2)
-
-    # =================================================
-    # Styling and Axis Configuration
-    # =================================================
-    # Row 1 Labels
-    fig.update_xaxes(title_text="Time (ns)", row=1, col=1)
-    fig.update_yaxes(title_text="Δt (ns)", row=1, col=1)
-    fig.update_xaxes(title_text="Time (ns)", row=1, col=2)
-    fig.update_yaxes(title_text="Δt (ns)", row=1, col=2)
-
-    # Row 2 Labels + Enable Log Scales
-    fig.update_xaxes(title_text="Δt (ns)", row=2, col=1)
-    fig.update_yaxes(title_text="Count (log)", type="log", row=2, col=1)
-    fig.update_xaxes(title_text="Δt (ns)", row=2, col=2)
-    fig.update_yaxes(title_text="Count (log)", type="log", row=2, col=2)
-
-    # Global Layout
-    fig.update_layout(
-        title_text=f"Sensor Refresh Rate Diagnostics: {ctx.get('input_path', '')}",
-        title_x=0.5,
-        height=950, 
-        width=1400, 
-        showlegend=True, # Set to True to display the custom line labels
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        template="plotly_white"
-    )
-
-    output_path = get_html_path(ctx)
-
-    fig.write_html(output_path, include_plotlyjs='cdn')
-    return [output_path]

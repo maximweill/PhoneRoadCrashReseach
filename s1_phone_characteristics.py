@@ -11,55 +11,49 @@ if __name__ == "__main__":
 
     print("Collecting characteristics...")
     
-    # # Drops
-    # ppl.run_directory_parallel(
-    #     pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
-    #     src_dir=Path("data_processing_gitignore/phone_drop_test_data/parsed"),
-    #     output_dir=individual_dir,
-    #     log_path=individual_dir / "characteristics_drops.csv"
-    # )
-
-    # # Stationary
-    # ppl.run_directory_parallel(
-    #     pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
-    #     src_dir=Path("data_processing_gitignore/stationary/start/parsed"),
-    #     output_dir=individual_dir,
-    #     log_path=individual_dir / "start_characteristics_stationary.csv"
-    # )
-    # ppl.run_directory_parallel(
-    #     pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
-    #     src_dir=Path("data_processing_gitignore/stationary/end/parsed"),
-    #     output_dir=individual_dir,
-    #     log_path=individual_dir / "end_characteristics_stationary.csv"
-    # )
+    # Drops
     ppl.run_directory_parallel(
         pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
-        src_dir=Path("data_processing_gitignore/stationary/end2/parsed"),
+        src_dir=Path("data_processing_gitignore/phone_drop_test_data/parsed"),
         output_dir=individual_dir,
-        log_path=individual_dir / "end2_characteristics_stationary.csv"
+        log_path=individual_dir / "characteristics_drops.csv"
     )
 
-    # # Headform
-    # ppl.run_directory_parallel(
-    #     pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
-    #     src_dir=Path("data_processing_gitignore/stationary/headform/parsed"),
-    #     output_dir=individual_dir,
-    #     log_path=individual_dir / "headform_characteristics_stationary.csv"
-    # )
-    # ppl.run_directory_parallel(
-    #     pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
-    #     src_dir=Path("data_processing_gitignore/stationary/headform_filtered/parsed"),
-    #     output_dir=individual_dir,
-    #     log_path=individual_dir / "headform_filtered_characteristics_stationary.csv"
-    # )
+    # Stationary
+    ppl.run_directory_parallel(
+        pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
+        src_dir=Path("data_processing_gitignore/stationary/start/parsed"),
+        output_dir=individual_dir,
+        log_path=individual_dir / "start_characteristics_stationary.csv"
+    )
+    ppl.run_directory_parallel(
+        pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
+        src_dir=Path("data_processing_gitignore/stationary/end/parsed"),
+        output_dir=individual_dir,
+        log_path=individual_dir / "end_characteristics_stationary.csv"
+    )
 
-    # # Calibration
-    # ppl.run_directory_parallel(
-    #     pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
-    #     src_dir=Path("data_processing_gitignore/6axis_calibration/framed"),
-    #     output_dir=individual_dir,
-    #     log_path=individual_dir / "characteristics_calibration.csv"
-    # )
+    # Headform
+    ppl.run_directory_parallel(
+        pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
+        src_dir=Path("data_processing_gitignore/stationary/headform/parsed"),
+        output_dir=individual_dir,
+        log_path=individual_dir / "headform_characteristics_stationary.csv"
+    )
+    ppl.run_directory_parallel(
+        pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
+        src_dir=Path("data_processing_gitignore/stationary/headform_filtered/parsed"),
+        output_dir=individual_dir,
+        log_path=individual_dir / "headform_filtered_characteristics_stationary.csv"
+    )
+
+    # Calibration
+    ppl.run_directory_parallel(
+        pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
+        src_dir=Path("data_processing_gitignore/6axis_calibration/framed"),
+        output_dir=individual_dir,
+        log_path=individual_dir / "characteristics_calibration.csv"
+    )
 
     # # 2. Aggregate the collected logs into the final project summary
     # # We use the same run_directory pattern with null_saver

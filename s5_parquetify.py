@@ -158,23 +158,6 @@ if __name__ == "__main__":
     #     downsample=10
     # )
 
-    # # 5. Stationary Data end2
-    convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "stationary" / "end2" / "parsed",
-        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end2" / "parsed",
-        nrows=1_000
-    )
-    convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "stationary"/ "end2" / "allan_variance",
-        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end2" / "allan_variance",
-        downsample=2
-    )
-    convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "stationary"/ "end2" / "power_spectral_density",
-        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end2" / "power_spectral_density",
-        downsample=10
-    )
-
     # # 7. 6-Axis Calibration
     # convert_csv_dir_to_parquet(
     #     source_dir=DATA_DIR / "6axis_calibration" / "framed",
@@ -221,18 +204,18 @@ if __name__ == "__main__":
     # )
 
 
-    # convert_csv_dir_to_parquet(
-    #     source_dir=DATA_DIR / "phone_drop_test_data"/ "power_spectral_density"/"framed",
-    #     output_dir=WEBAPP_DATA_DIR / "drop_psd" / "framed",
-    #     downsample=10
-    # )
-    # convert_csv_dir_to_parquet(
-    #     source_dir=DATA_DIR / "phone_drop_test_data"/ "power_spectral_density"/ "headform",
-    #     output_dir=WEBAPP_DATA_DIR / "drop_psd" / "headform",
-    #     downsample=10
-    # )
-    # convert_csv_dir_to_parquet(
-    #     source_dir=DATA_DIR / "phone_drop_test_data"/ "power_spectral_density"/ "reference",
-    #     output_dir=WEBAPP_DATA_DIR / "drop_psd" / "reference",
-    #     downsample=10
-    # )
+    convert_csv_dir_to_parquet(
+        source_dir=DATA_DIR / "phone_drop_test_data"/ "power_spectral_density"/"framed",
+        output_dir=WEBAPP_DATA_DIR / "drop_psd" / "framed",
+        downsample=10
+    )
+    convert_csv_dir_to_parquet(
+        source_dir=DATA_DIR / "phone_drop_test_data"/ "power_spectral_density"/ "headform",
+        output_dir=WEBAPP_DATA_DIR / "drop_psd" / "headform",
+        downsample=10
+    )
+    convert_csv_dir_to_parquet(
+        source_dir=DATA_DIR / "phone_drop_test_data"/ "power_spectral_density"/ "reference",
+        output_dir=WEBAPP_DATA_DIR / "drop_psd" / "reference",
+        downsample=10
+    )

@@ -195,27 +195,6 @@ def tested_phone_characteristics_page():
                 value="accel_end",
             ),
             ui.accordion_panel(
-                "Accelerometer - End 2 of Test",
-                ui.layout_columns(
-                    ui.card(
-                        ui.card_header("Accel X (m/s2)"),
-                        output_widget("accel_end2_x_plot", height=TRACE_PLOT_HEIGHT),
-                        full_screen=True,
-                    ),
-                    ui.card(
-                        ui.card_header("Accel Y (m/s2)"),
-                        output_widget("accel_end2_y_plot", height=TRACE_PLOT_HEIGHT),
-                        full_screen=True,
-                    ),
-                    ui.card(
-                        ui.card_header("Accel Z (m/s2)"),
-                        output_widget("accel_end2_z_plot", height=TRACE_PLOT_HEIGHT),
-                        full_screen=True,
-                    ),
-                ),
-                value="accel_end2",
-            ),
-            ui.accordion_panel(
                 "Gyroscope - Start of Test",
                 ui.layout_columns(
                     ui.card(
@@ -256,27 +235,6 @@ def tested_phone_characteristics_page():
                     ),
                 ),
                 value="gyro_end",
-            ),
-            ui.accordion_panel(
-                "Gyroscope - End 2 of Test",
-                ui.layout_columns(
-                    ui.card(
-                        ui.card_header("Gyro X (rad/s)"),
-                        output_widget("gyro_end2_x_plot", height=TRACE_PLOT_HEIGHT),
-                        full_screen=True,
-                    ),
-                    ui.card(
-                        ui.card_header("Gyro Y (rad/s)"),
-                        output_widget("gyro_end2_y_plot", height=TRACE_PLOT_HEIGHT),
-                        full_screen=True,
-                    ),
-                    ui.card(
-                        ui.card_header("Gyro Z (rad/s)"),
-                        output_widget("gyro_end2_z_plot", height=TRACE_PLOT_HEIGHT),
-                        full_screen=True,
-                    ),
-                ),
-                value="gyro_end2",
             ),
             open="accel_start",
         ),
@@ -355,12 +313,10 @@ def _load_allan_data(phone_id: str | None, sensor: str) -> pd.DataFrame:
 
     # Start phase: sensor_stationary_...
     # End phase: both_stationary_...
-    # End2 phase: sensor_stationary_...
     start_mask = mask & (STATIONARY_INDEX["session"] == "start") & STATIONARY_INDEX["file_name"].str.startswith(sensor)
     end_mask = mask & (STATIONARY_INDEX["session"] == "end") & STATIONARY_INDEX["file_name"].str.startswith("both")
-    end2_mask = mask & (STATIONARY_INDEX["session"] == "end2") & STATIONARY_INDEX["file_name"].str.startswith(sensor)
     
-    rows = STATIONARY_INDEX[start_mask | end_mask | end2_mask]
+    rows = STATIONARY_INDEX[start_mask | end_mask]
     frames = []
     for _, row in rows.iterrows():
         path = DATA_DIR / row["path"]
@@ -386,12 +342,10 @@ def _load_psd_data(phone_id: str | None, sensor: str) -> pd.DataFrame:
 
     # Start phase: sensor_stationary_...
     # End phase: both_stationary_...
-    # End2 phase: sensor_stationary_...
     start_mask = mask & (STATIONARY_INDEX["session"] == "start") & STATIONARY_INDEX["file_name"].str.startswith(sensor)
     end_mask = mask & (STATIONARY_INDEX["session"] == "end") & STATIONARY_INDEX["file_name"].str.startswith("both")
-    end2_mask = mask & (STATIONARY_INDEX["session"] == "end2") & STATIONARY_INDEX["file_name"].str.startswith(sensor)
     
-    rows = STATIONARY_INDEX[start_mask | end_mask | end2_mask]
+    rows = STATIONARY_INDEX[start_mask | end_mask]
     frames = []
     for _, row in rows.iterrows():
         path = DATA_DIR / row["path"]
@@ -534,20 +488,12 @@ def register_tested_phone_characteristics_server(input, output, session):
         return _load_sensor_data(input.stationary_phone(), "accel", "end")
 
     @reactive.calc
-    def selected_accel_end2_data():
-        return _load_sensor_data(input.stationary_phone(), "accel", "end2")
-
-    @reactive.calc
     def selected_gyro_start_data():
         return _load_sensor_data(input.stationary_phone(), "gyro", "start")
 
     @reactive.calc
     def selected_gyro_end_data():
         return _load_sensor_data(input.stationary_phone(), "gyro", "end")
-
-    @reactive.calc
-    def selected_gyro_end2_data():
-        return _load_sensor_data(input.stationary_phone(), "gyro", "end2")
 
     @reactive.calc
     def selected_allan_accel_data():
@@ -597,24 +543,18 @@ def register_tested_phone_characteristics_server(input, output, session):
     def stationary_stats():
         acc_s = selected_accel_start_data()
         acc_e = selected_accel_end_data()
-        acc_e2 = selected_accel_end2_data()
         gyr_s = selected_gyro_start_data()
         gyr_e = selected_gyro_end_data()
-        gyr_e2 = selected_gyro_end2_data()
 
         stats = []
         if not acc_s.empty and ACCEL_RES_COLUMN in acc_s.columns:
             stats.append(f"Accel Start RMS: {acc_s[ACCEL_RES_COLUMN].std():.4f} m/s2")
         if not acc_e.empty and ACCEL_RES_COLUMN in acc_e.columns:
             stats.append(f"Accel End RMS: {acc_e[ACCEL_RES_COLUMN].std():.4f} m/s2")
-        if not acc_e2.empty and ACCEL_RES_COLUMN in acc_e2.columns:
-            stats.append(f"Accel End2 RMS: {acc_e2[ACCEL_RES_COLUMN].std():.4f} m/s2")
         if not gyr_s.empty and GYRO_RES_COLUMN in gyr_s.columns:
             stats.append(f"Gyro Start RMS: {gyr_s[GYRO_RES_COLUMN].std():.4f} rad/s")
         if not gyr_e.empty and GYRO_RES_COLUMN in gyr_e.columns:
             stats.append(f"Gyro End RMS: {gyr_e[GYRO_RES_COLUMN].std():.4f} rad/s")
-        if not gyr_e2.empty and GYRO_RES_COLUMN in gyr_e2.columns:
-            stats.append(f"Gyro End2 RMS: {gyr_e2[GYRO_RES_COLUMN].std():.4f} rad/s")
 
         return " | ".join(stats) if stats else "No data selected."
 
@@ -700,28 +640,6 @@ def register_tested_phone_characteristics_server(input, output, session):
             selected_accel_end_data(), "LinAccZ (m/s2)", "Accel Z - End"
         )
 
-    # Accel End2 Plots
-    @output
-    @render_plotly
-    def accel_end2_x_plot():
-        return _stationary_line_plot(
-            selected_accel_end2_data(), "LinAccX (m/s2)", "Accel X - End 2"
-        )
-
-    @output
-    @render_plotly
-    def accel_end2_y_plot():
-        return _stationary_line_plot(
-            selected_accel_end2_data(), "LinAccY (m/s2)", "Accel Y - End 2"
-        )
-
-    @output
-    @render_plotly
-    def accel_end2_z_plot():
-        return _stationary_line_plot(
-            selected_accel_end2_data(), "LinAccZ (m/s2)", "Accel Z - End 2"
-        )
-
     # Gyro Start Plots
     @output
     @render_plotly
@@ -764,26 +682,4 @@ def register_tested_phone_characteristics_server(input, output, session):
     def gyro_end_z_plot():
         return _stationary_line_plot(
             selected_gyro_end_data(), "RotVelZ (rad/s)", "Gyro Z - End"
-        )
-
-    # Gyro End2 Plots
-    @output
-    @render_plotly
-    def gyro_end2_x_plot():
-        return _stationary_line_plot(
-            selected_gyro_end2_data(), "RotVelX (rad/s)", "Gyro X - End 2"
-        )
-
-    @output
-    @render_plotly
-    def gyro_end2_y_plot():
-        return _stationary_line_plot(
-            selected_gyro_end2_data(), "RotVelY (rad/s)", "Gyro Y - End 2"
-        )
-
-    @output
-    @render_plotly
-    def gyro_end2_z_plot():
-        return _stationary_line_plot(
-            selected_gyro_end2_data(), "RotVelZ (rad/s)", "Gyro Z - End 2"
         )
