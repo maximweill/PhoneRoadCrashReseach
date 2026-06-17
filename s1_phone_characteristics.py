@@ -8,6 +8,7 @@ if __name__ == "__main__":
     
     individual_dir = Path("data_processing_gitignore/phone_characteristics/individual")
     individual_dir.mkdir(parents=True, exist_ok=True)
+    headform_dir = Path("data_processing_gitignore/phone_characteristics/headform")
 
     print("Collecting characteristics...")
     
@@ -18,6 +19,13 @@ if __name__ == "__main__":
     #     output_dir=individual_dir,
     #     log_path=individual_dir / "characteristics_drops.csv"
     # )
+    ppl.run_directory_parallel(
+        pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
+        src_dir=Path("data_processing_gitignore/phone_drop_test_data/headform"),
+        output_dir=headform_dir,
+        log_path=headform_dir / "characteristics_drops.csv"
+    )
+
 
     # # Stationary
     # ppl.run_directory_parallel(
@@ -32,12 +40,13 @@ if __name__ == "__main__":
     #     output_dir=individual_dir,
     #     log_path=individual_dir / "end_characteristics_stationary.csv"
     # )
-    ppl.run_directory_parallel(
-        pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
-        src_dir=Path("data_processing_gitignore/stationary/end2/parsed"),
-        output_dir=individual_dir,
-        log_path=individual_dir / "end2_characteristics_stationary.csv"
-    )
+    # ppl.run_directory_parallel(
+    #     pipeline=ppl.definitions.PHONE_CHARACTERISTICS_PIPELINE,
+    #     src_dir=Path("data_processing_gitignore/stationary/end2/parsed"),
+    #     output_dir=individual_dir,
+    #     log_path=individual_dir / "end2_characteristics_stationary.csv"
+    # )
+
 
     # # Headform
     # ppl.run_directory_parallel(
@@ -65,13 +74,13 @@ if __name__ == "__main__":
     # # We use the same run_directory pattern with null_saver
     
 
-    print("Running final aggregation...")
-    ppl.run_directory_parallel(
-        pipeline=ppl.definitions.CHARACTERISTICS_AGGREGATION_PIPELINE,
-        src_dir=individual_dir,
-        output_dir=Path("data_processing_gitignore/phone_characteristics/aggregated"),
-        log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/characteristics_aggregation_log.csv")
-    )
+    # print("Running final aggregation...")
+    # ppl.run_directory_parallel(
+    #     pipeline=ppl.definitions.CHARACTERISTICS_AGGREGATION_PIPELINE,
+    #     src_dir=individual_dir,
+    #     output_dir=Path("data_processing_gitignore/phone_characteristics/aggregated"),
+    #     log_path=Path("data_processing_gitignore/DEBUGGING_LOGS/characteristics_aggregation_log.csv")
+    # )
 
 
 

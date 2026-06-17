@@ -95,12 +95,18 @@ if __name__ == "__main__":
     # )
 
     
-    # # Aggregated characteristics
-    # convert_csv_dir_to_parquet(
-    #     source_dir=DATA_DIR / "phone_characteristics" / "aggregated",
-    #     output_dir=LOGS_DEST/"characteristics",
-    #     rename_map={"characteristics_drops.csv": "phone_characteristics_aggregated.parquet"}
-    # )
+    # Aggregated characteristics
+    convert_csv_dir_to_parquet(
+        source_dir=DATA_DIR / "phone_characteristics" / "aggregated",
+        output_dir=LOGS_DEST/"characteristics",
+        rename_map={"characteristics_drops.csv": "phone_characteristics_aggregated.parquet"}
+    )
+    # Headform characteristics
+    convert_csv_dir_to_parquet(
+        source_dir=DATA_DIR / "phone_characteristics" / "headform",
+        output_dir=LOGS_DEST/"characteristics",
+        rename_map={"characteristics_drops.csv": "headform_characteristics.parquet"}
+    )
 
     # # 3. Phone Drop Test Data - Reference Signals
     # convert_csv_dir_to_parquet(
@@ -158,22 +164,22 @@ if __name__ == "__main__":
     #     downsample=10
     # )
 
-    # # 5. Stationary Data end2
-    convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "stationary" / "end2" / "parsed",
-        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end2" / "parsed",
-        nrows=1_000
-    )
-    convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "stationary"/ "end2" / "allan_variance",
-        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end2" / "allan_variance",
-        downsample=2
-    )
-    convert_csv_dir_to_parquet(
-        source_dir=DATA_DIR / "stationary"/ "end2" / "power_spectral_density",
-        output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end2" / "power_spectral_density",
-        downsample=10
-    )
+    # # # 5. Stationary Data end2
+    # convert_csv_dir_to_parquet(
+    #     source_dir=DATA_DIR / "stationary" / "end2" / "parsed",
+    #     output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end2" / "parsed",
+    #     nrows=1_000
+    # )
+    # convert_csv_dir_to_parquet(
+    #     source_dir=DATA_DIR / "stationary"/ "end2" / "allan_variance",
+    #     output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end2" / "allan_variance",
+    #     downsample=2
+    # )
+    # convert_csv_dir_to_parquet(
+    #     source_dir=DATA_DIR / "stationary"/ "end2" / "power_spectral_density",
+    #     output_dir=WEBAPP_DATA_DIR / "stationary_parquet" / "end2" / "power_spectral_density",
+    #     downsample=10
+    # )
 
     # # 7. 6-Axis Calibration
     # convert_csv_dir_to_parquet(
@@ -224,15 +230,15 @@ if __name__ == "__main__":
     # convert_csv_dir_to_parquet(
     #     source_dir=DATA_DIR / "phone_drop_test_data"/ "power_spectral_density"/"framed",
     #     output_dir=WEBAPP_DATA_DIR / "drop_psd" / "framed",
-    #     downsample=10
+    #     downsample=30
     # )
     # convert_csv_dir_to_parquet(
     #     source_dir=DATA_DIR / "phone_drop_test_data"/ "power_spectral_density"/ "headform",
     #     output_dir=WEBAPP_DATA_DIR / "drop_psd" / "headform",
-    #     downsample=10
+    #     downsample=30
     # )
     # convert_csv_dir_to_parquet(
     #     source_dir=DATA_DIR / "phone_drop_test_data"/ "power_spectral_density"/ "reference",
     #     output_dir=WEBAPP_DATA_DIR / "drop_psd" / "reference",
-    #     downsample=10
+    #     downsample=30
     # )

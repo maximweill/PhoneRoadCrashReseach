@@ -19,6 +19,9 @@ UNFILTERED_CHARACTERISTICS_PATH = (
 FILTERED_CHARACTERISTICS_PATH = (
     DATA_DIR / "lookup_tables_parquet" / "characteristics" / "headform_filtered_characteristics_stationary.parquet"
 )
+HEADFORM_CHARACTERISTICS_PATH = (
+    DATA_DIR / "lookup_tables_parquet" / "characteristics" / "headform_characteristics.parquet"
+)
 TIME_COLUMN = "Time (s)"
 ACCEL_RES_COLUMN = "LinAccRes (m/s2)"
 GYRO_RES_COLUMN = "RotVelRes (rad/s)"
@@ -86,6 +89,28 @@ def headform_characteristics_page():
 
     return ui.nav_panel(
         "Headform Characteristics",
+        ui.card(
+            ui.card_header("Headform Impact Characteristics Overview"),
+            ui.layout_columns(
+                ui.card(
+                    ui.card_header("Max Linear Acceleration (m/s2)"),
+                    output_widget("headform_impact_accel_box_plot", height=TRACE_PLOT_HEIGHT),
+                    full_screen=True,
+                ),
+                ui.card(
+                    ui.card_header("Max Rotational Velocity (rad/s)"),
+                    output_widget("headform_impact_rotvel_box_plot", height=TRACE_PLOT_HEIGHT),
+                    full_screen=True,
+                ),
+                ui.card(
+                    ui.card_header("Max Rotational Acceleration (rad/s2)"),
+                    output_widget("headform_impact_rotacc_box_plot", height=TRACE_PLOT_HEIGHT),
+                    full_screen=True,
+                ),
+                fill=False,
+            ),
+            fill=False,
+        ),
         ui.layout_columns(
             ui.card(
                 ui.card_header("Headform Stationary Behavior Analysis"),
@@ -655,4 +680,57 @@ def register_headform_characteristics_server(input, output, session):
     def headform_gyro_filtered_z_plot():
         return _stationary_line_plot(
             selected_gyro_filtered_data(), "RotVelZ (rad/s)", "Gyro Z - Filtered"
+        )
+
+    def _impact_box_plot(column: str, title: str, color: str):
+        path = HEADFORM_CHARACTERISTICS_PATH
+        print(f"DEBUG: Loading box plot data from {path}")
+        if not path.exists():
+            print(f"DEBUG: Path does not exist: {path}")
+            return _empty_plot("No impact characteristics data")
+        
+        try:
+            df = pd.read_parquet(path)
+            print(f"DEBUG: Successfully read parquet. Shape: {df.shape}")
+            if column not in df.columns:
+                print(f"DEBUG: Column {column} not found in {df.columns.tolist()}")
+                return _empty_plot(f"Column not found: {column}")
+                
+            fig = px.box(
+                df,
+                y=column,
+                points="all",
+                title=title,
+            )
+            fig.update_traces(marker_color=color)
+            return fig
+        except Exception as e:
+            print(f"DEBUG: Error in _impact_box_plot: {e}")
+            return _empty_plot(f"Error: {str(e)}")
+
+    @output
+    @render_plotly
+    def headform_impact_accel_box_plot():
+        return _impact_box_plot(
+            "max_LinAccRes (m/s2)", 
+            "Max Linear Acceleration",
+            "#636EFA"
+        )
+
+    @output
+    @render_plotly
+    def headform_impact_rotvel_box_plot():
+        return _impact_box_plot(
+            "max_RotVelRes (rad/s)", 
+            "Max Rotational Velocity",
+            "#EF553B"
+        )
+
+    @output
+    @render_plotly
+    def headform_impact_rotacc_box_plot():
+        return _impact_box_plot(
+            "max_RotAccRes (rad/s2)", 
+            "Max Rotational Acceleration",
+            "#00CC96"
         )
